@@ -190,19 +190,23 @@ body {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
-.reminder-card .toggle {
+.reminder-card .toggle, 
+.setting-row .toggle {
   position: relative;
   width: 44px;
   height: 24px;
   background: #e5e5ea;
   border-radius: 12px;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
 }
-.reminder-card .toggle.active {
+
+.toggle.active {
   background: var(--success);
 }
-.reminder-card .toggle::after {
+
+.toggle::after {
   content: '';
   position: absolute;
   width: 20px;
@@ -211,12 +215,22 @@ body {
   border-radius: 50%;
   top: 2px;
   left: 2px;
-  transition: transform 0.2s ease;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
-.reminder-card .toggle.active::after {
+
+.toggle.active::after {
   transform: translateX(20px);
 }
+
+.toggle:active::after {
+  width: 26px; /* 点击时的拉伸效果 */
+}
+
+.toggle.active:active::after {
+  transform: translateX(14px);
+}
+
 .interval-input {
   width: 60px;
   background: var(--bg);

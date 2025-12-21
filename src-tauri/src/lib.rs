@@ -5,6 +5,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, WindowEvent,
 };
+use tauri_plugin_notification::NotificationExt;
 
 fn get_settings_path() -> PathBuf {
     let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -27,37 +28,21 @@ fn save_settings(settings: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn set_autostart(enabled: bool) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        use std::process::Command;
-        let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
-        let key_path = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
-        
-        if enabled {
-            Command::new("reg")
-                .args(["add", key_path, "/v", "DeskReminder", "/t", "REG_SZ", "/d", exe_path.to_str().unwrap(), "/f"])
-                .output()
-                .map_err(|e| e.to_string())?;
-        } else {
-            Command::new("reg")
-                .args(["delete", key_path, "/v", "DeskReminder", "/f"])
-                .output()
-                .map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
-
-use tauri_plugin_notification::NotificationExt;
-
-#[tauri::command]
 fn play_notification_sound() {
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
+        let script = "
+            $paths = @('C:\\Windows\\Media\\Windows Notify System Generic.wav', 'C:\\Windows\\Media\\Notify.wav', 'C:\\Windows\\Media\\chimes.wav');
+            foreach ($path in $paths) {
+                if (Test-Path $path) {
+                    (New-Object System.Media.SoundPlayer $path).PlaySync();
+                    break;
+                }
+            }
+        ";
         let _ = Command::new("powershell")
-            .args(["-Command", "(New-Object System.Media.SoundPlayer 'C:\\Windows\\Media\\Notify.wav').PlaySync()"])
+            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", script])
             .spawn();
     }
 }
@@ -82,10 +67,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--silent"])))
         .invoke_handler(tauri::generate_handler![
             load_settings,
             save_settings,
-            set_autostart,
             play_notification_sound,
             show_notification,
             show_main_window,

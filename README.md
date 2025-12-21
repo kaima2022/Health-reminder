@@ -1,6 +1,6 @@
 # 健康办公助手 (Desk Reminder)
 
-> **极简、精准、高效。为现代办公族量身定制的健康守护方案。**
+> **极简、精准、高效。为现代办公族量身定制的健康守护小程序。**
 
 [![Platform](https://img.shields.io/badge/Platform-Windows-blue?style=flat-square)](https://tauri.app/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
@@ -18,10 +18,10 @@
 ### 任务排程 (Tasks)
 ![Tasks](./docs/screenshots/tasks.png)
 
-### 智能提醒 (Notifications)
-| 应用内弹窗 | 系统级提醒 |
+### 系统设置与智能提醒 (Settings & Notifications)
+| 系统设置 | 智能提醒 (应用内+系统级) |
 | :---: | :---: |
-| ![In-app](./docs/screenshots/notification.png) | ![System](./docs/screenshots/弹窗提醒.png) |
+| ![Settings](./docs/screenshots/settings.png) | ![In-app](./docs/screenshots/notification.png) <br> ![System](./docs/screenshots/弹窗提醒.png) |
 
 ---
 

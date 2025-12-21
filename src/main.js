@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { requestPermission } from '@tauri-apps/plugin-notification';
 
 const ICONS = {
@@ -12,7 +13,8 @@ const ICONS = {
   reset: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>`,
   plus: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`,
   trash: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`,
-  bell: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>`
+  bell: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>`,
+  volume: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`
 };
 
 const DEFAULT_TASKS = [
@@ -40,24 +42,26 @@ let activePopup = null;
 async function init() {
   await loadSettings();
   
+  try {
+    settings.autoStart = await isEnabled();
+    console.log('Real autostart status:', settings.autoStart);
+  } catch (e) {
+    console.error('Failed to check autostart status', e);
+  }
+
+  try {
+    await requestPermission();
+  } catch (e) {
+    console.error('Failed to request notification permission', e);
+  }
+  
   settings.tasks.forEach(task => {
     if (countdowns[task.id] === undefined) {
       countdowns[task.id] = task.interval * 60;
     }
   });
 
-  // 必须在初始化时请求通知权限，否则会被系统拦截
-  try {
-    let permission = await requestPermission();
-    if (permission !== 'granted') {
-      console.warn('Notification permission not granted');
-    }
-  } catch (e) {
-    console.error('Failed to request permission', e);
-  }
-
   renderFullUI(); 
-  
   setInterval(tick, 1000);
   
   listen('show-window', () => {
@@ -98,9 +102,7 @@ function saveStats() {
 
 function tick() {
   if (isPaused) return;
-  
   stats.workMinutes = Math.floor((Date.now() - workStartTime) / 60000);
-  
   settings.tasks.forEach(task => {
     if (task.enabled && countdowns[task.id] > 0) {
       countdowns[task.id]--;
@@ -109,8 +111,7 @@ function tick() {
       }
     }
   });
-  
-  updateLiveValues(); // 仅更新数值，不刷新 DOM 结构
+  updateLiveValues(); 
 }
 
 async function triggerNotification(task) {
@@ -160,7 +161,6 @@ function updateTask(id, updates) {
       countdowns[id] = task.interval * 60;
     }
     saveSettings();
-    // 这里不调用 renderFullUI，由 updateLiveValues 或特定的局部更新处理
   }
 }
 
@@ -183,15 +183,12 @@ function formatTime(seconds) {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
-// 核心改进：仅更新数值
 function updateLiveValues() {
-  // 更新统计数据
   const statsElements = document.querySelectorAll('.status-item .value');
   if (statsElements[0]) statsElements[0].innerText = stats.sitBreaks;
   if (statsElements[1]) statsElements[1].innerText = stats.waterCups;
   if (statsElements[2]) statsElements[2].innerText = stats.workMinutes;
 
-  // 更新主倒计时
   let nextTask = null;
   let minTime = Infinity;
   settings.tasks.forEach(t => {
@@ -220,7 +217,6 @@ function updateLiveValues() {
     mainRing.style.strokeDashoffset = offset;
   }
 
-  // 更新任务卡片中的微缩进度条和剩余时间文字
   settings.tasks.forEach(task => {
     const card = document.querySelector(`.reminder-card[data-id="${task.id}"]`);
     if (card) {
@@ -228,7 +224,6 @@ function updateLiveValues() {
       const total = task.interval * 60;
       const offset = 113 * (1 - current / total);
       card.querySelector('.progress-mini .progress').style.strokeDashoffset = offset;
-      
       const timeDisplay = card.querySelector('.time-remaining');
       if (timeDisplay) timeDisplay.innerText = `(${formatTime(current)})`;
     }
@@ -237,15 +232,6 @@ function updateLiveValues() {
 
 function renderFullUI() {
   const app = document.getElementById('app');
-  let nextTask = null;
-  let minTime = Infinity;
-  settings.tasks.forEach(t => {
-    if (t.enabled && countdowns[t.id] < minTime) {
-      minTime = countdowns[t.id];
-      nextTask = t;
-    }
-  });
-
   app.innerHTML = `
     <div class="header">
       <h1>健康提醒助手</h1>
@@ -303,8 +289,17 @@ function renderFullUI() {
 
     <div class="settings-section">
       <h3>系统设置</h3>
-      <div class="setting-row"><label>提示音</label><div class="toggle ${settings.soundEnabled ? 'active' : ''}" id="soundToggle"></div></div>
-      <div class="setting-row"><label>开机自启动</label><div class="toggle ${settings.autoStart ? 'active' : ''}" id="startToggle"></div></div>
+      <div class="setting-row">
+        <label>提示音</label>
+        <div style="display:flex; gap:12px; align-items:center;">
+          <button class="preset-btn" id="testSoundBtn" style="padding:4px 8px; display:flex; gap:4px; align-items:center;">${ICONS.volume} 测试</button>
+          <div class="toggle ${settings.soundEnabled ? 'active' : ''}" id="soundToggle"></div>
+        </div>
+      </div>
+      <div class="setting-row">
+        <label>开机自启动</label>
+        <div class="toggle ${settings.autoStart ? 'active' : ''}" id="startToggle"></div>
+      </div>
     </div>
 
     <div class="notification-popup ${activePopup ? 'show' : ''}">
@@ -316,7 +311,7 @@ function renderFullUI() {
       </div>
     </div>
 
-    <div class="footer">健康提醒助手 v1.3 · 愿你每天都有好身体</div>
+    <div class="footer">健康办公助手 v1.4 · 愿你每天都有好身体</div>
   `;
 
   bindEvents();
@@ -324,15 +319,41 @@ function renderFullUI() {
 }
 
 function bindEvents() {
-  document.querySelectorAll('.toggle[data-toggle-id]').forEach(el => {
-    el.addEventListener('click', () => {
-      const task = settings.tasks.find(t => t.id === el.dataset.toggleId);
-      if (task) {
-        task.enabled = !task.enabled;
-        el.classList.toggle('active', task.enabled);
+  document.querySelectorAll('.toggle').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      console.log('Toggle clicked:', el.id || el.dataset.toggleId);
+      
+      if (el.dataset.toggleId) {
+        // 任务卡片开关
+        const task = settings.tasks.find(t => t.id === el.dataset.toggleId);
+        if (task) {
+          task.enabled = !task.enabled;
+          el.classList.toggle('active', task.enabled);
+          saveSettings();
+          updateLiveValues();
+        }
+      } else if (el.id === 'soundToggle') {
+        // 提示音开关
+        settings.soundEnabled = !settings.soundEnabled;
+        el.classList.toggle('active', settings.soundEnabled);
         saveSettings();
-        // 只有切换开关才可能改变主倒计时，所以更新一下
-        updateLiveValues();
+      } else if (el.id === 'startToggle') {
+        // 自启动开关
+        try {
+          const newState = !settings.autoStart;
+          if (newState) {
+            await enable();
+          } else {
+            await disable();
+          }
+          settings.autoStart = newState;
+          el.classList.toggle('active', settings.autoStart);
+          saveSettings();
+          console.log('Autostart toggled to:', settings.autoStart);
+        } catch (err) {
+          console.error('Failed to toggle autostart', err);
+          alert('设置自启动失败，请检查系统权限');
+        }
       }
     });
   });
@@ -342,13 +363,12 @@ function bindEvents() {
       const val = parseInt(e.target.value);
       if (val > 0) {
         updateTask(el.dataset.id, { interval: val });
-        // 立即更新该卡片的小环和倒计时文字，但不触碰 Input 本身
         updateLiveValues();
       }
     });
   });
 
-  document.querySelectorAll('.preset-btn').forEach(el => {
+  document.querySelectorAll('.preset-btn:not(#testSoundBtn)').forEach(el => {
     el.addEventListener('click', () => {
       const val = parseInt(el.dataset.val);
       updateTask(el.dataset.id, { interval: val });
@@ -385,17 +405,9 @@ function bindEvents() {
   document.getElementById('resetBtn').onclick = resetAll;
   document.getElementById('dismissBtn').onclick = dismissNotification;
   
-  document.getElementById('soundToggle').onclick = (e) => {
-    settings.soundEnabled = !settings.soundEnabled;
-    e.target.classList.toggle('active', settings.soundEnabled);
-    saveSettings();
-  };
-  
-  document.getElementById('startToggle').onclick = (e) => {
-    settings.autoStart = !settings.autoStart;
-    e.target.classList.toggle('active', settings.autoStart);
-    invoke('set_autostart', { enabled: settings.autoStart }).catch(() => {});
-    saveSettings();
+  document.getElementById('testSoundBtn').onclick = () => {
+    console.log('Test sound button clicked');
+    invoke('play_notification_sound').catch(e => console.error('Sound invoke failed:', e));
   };
 }
 

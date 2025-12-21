@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "notification:default",
+    "autostart:default",
     "shell:default"
   ]
 }
