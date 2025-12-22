@@ -66,6 +66,10 @@ async function init() {
   listen('show-window', () => {
     invoke('show_main_window');
   });
+
+  listen('reset-all-tasks', () => {
+    resetAll();
+  });
 }
 
 async function loadSettings() {
@@ -187,6 +191,20 @@ function formatTime(seconds) {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+function updateTrayTooltip() {
+  let lines = ['健康提醒助手'];
+  if (isPaused) {
+    lines.push('(已暂停)');
+  } else {
+    settings.tasks.forEach(t => {
+      if (t.enabled) {
+        lines.push(`${t.title}：${formatTime(countdowns[t.id])}`);
+      }
+    });
+  }
+  invoke('update_tray_tooltip', { tooltip: lines.join('\n') }).catch(() => {});
+}
+
 function updateLiveValues() {
   const statsElements = document.querySelectorAll('.status-item .value');
   if (statsElements[0]) statsElements[0].innerText = stats.sitBreaks;
@@ -232,6 +250,8 @@ function updateLiveValues() {
       if (timeDisplay) timeDisplay.innerText = `(${formatTime(current)})`;
     }
   });
+
+  updateTrayTooltip();
 }
 
 function renderFullUI() {
@@ -315,7 +335,7 @@ function renderFullUI() {
       </div>
     </div>
 
-    <div class="footer">健康办公助手 v1.4.1 · 愿你每天都有好身体</div>
+    <div class="footer">健康办公助手 v1.4.6 · 愿你每天都有好身体</div>
   `;
 
   bindEvents();

@@ -672,20 +672,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "desk-reminder"
-version = "1.4.0"
-dependencies = [
- "dirs 5.0.1",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-notification",
- "tauri-plugin-shell",
-]
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1436,6 +1422,20 @@ name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+
+[[package]]
+name = "health-reminder"
+version = "1.4.6"
+dependencies = [
+ "dirs 5.0.1",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-notification",
+ "tauri-plugin-shell",
+]
 
 [[package]]
 name = "heck"

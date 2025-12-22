@@ -1,11 +1,14 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, WindowEvent,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent, TrayIcon},
+    Manager, WindowEvent, State, Emitter,
 };
 use tauri_plugin_notification::NotificationExt;
+
+struct TrayState(Mutex<Option<TrayIcon>>);
 
 fn get_settings_path() -> PathBuf {
     let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -90,6 +93,13 @@ fn show_main_window(window: tauri::Window) {
     let _ = window.set_focus();
 }
 
+#[tauri::command]
+fn update_tray_tooltip(state: State<TrayState>, tooltip: String) {
+    if let Some(tray) = state.0.lock().unwrap().as_ref() {
+        let _ = tray.set_tooltip(Some(&tooltip));
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -104,13 +114,16 @@ pub fn run() {
             play_notification_sound,
             show_notification,
             show_main_window,
+            update_tray_tooltip,
         ])
+        .manage(TrayState(Mutex::new(None)))
         .setup(|app| {
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
+            let reset = MenuItem::with_id(app, "reset", "重置所有任务", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &reset, &quit])?;
             
-            let _tray = TrayIconBuilder::new()
+            let tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .tooltip("健康提醒助手")
@@ -124,6 +137,9 @@ pub fn run() {
                                 let _ = window.show();
                                 let _ = window.set_focus();
                             }
+                        }
+                        "reset" => {
+                            let _ = app.emit("reset-all-tasks", ());
                         }
                         _ => {}
                     }
@@ -142,6 +158,8 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+            
+            *app.state::<TrayState>().0.lock().unwrap() = Some(tray);
             
             Ok(())
         })
