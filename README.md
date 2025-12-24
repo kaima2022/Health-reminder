@@ -80,7 +80,7 @@
 
 ```powershell
 # 添加 bucket（首次安装）
-scoop bucket add desk-reminder https://github.com/kaima2022/desk-reminder
+scoop bucket add health-reminder https://github.com/kaima2022/desk-reminder
 
 # 安装
 scoop install health-reminder
