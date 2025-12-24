@@ -104,6 +104,11 @@ fn show_main_window(window: tauri::Window) {
 }
 
 #[tauri::command]
+fn hide_main_window(window: tauri::Window) {
+    let _ = window.hide();
+}
+
+#[tauri::command]
 fn update_tray_tooltip(state: State<TrayState>, tooltip: String) {
     if let Some(tray) = state.0.lock().unwrap().as_ref() {
         let _ = tray.set_tooltip(Some(&tooltip));
@@ -200,6 +205,7 @@ pub fn run() {
             play_notification_sound,
             show_notification,
             show_main_window,
+            hide_main_window,
             update_tray_tooltip,
             enter_lock_mode,
             exit_lock_mode,

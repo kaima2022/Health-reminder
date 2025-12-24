@@ -46,6 +46,7 @@ let lockScreenState = {
   task: null,
   unlockProgress: 0,
   unlockTimer: null,
+  waitingConfirm: false,
 }; 
 
 async function init() {
@@ -67,6 +68,7 @@ async function init() {
       task: task,
       unlockProgress: 0,
       unlockTimer: null,
+      waitingConfirm: false,
     };
     
     renderFullUI();
@@ -189,6 +191,7 @@ async function startLockScreen(task) {
     task: { ...task },
     unlockProgress: 0,
     unlockTimer: null,
+    waitingConfirm: false,
   };
   
   try {
@@ -218,13 +221,19 @@ async function startLockScreen(task) {
     
     if (lockScreenState.remaining <= 0) {
       clearInterval(lockInterval);
-      endLockScreen();
+      showLockConfirm();
     }
   }, 1000);
 }
 
+function showLockConfirm() {
+  lockScreenState.waitingConfirm = true;
+  renderFullUI();
+}
+
 async function endLockScreen() {
   lockScreenState.active = false;
+  lockScreenState.waitingConfirm = false;
   
   const id = lockScreenState.task?.id;
   if (id === 'sit') stats.sitBreaks++;
@@ -233,6 +242,7 @@ async function endLockScreen() {
   
   try {
     await invoke('exit_lock_mode');
+    await invoke('hide_main_window');
   } catch (e) {
     console.error('Failed to exit lock mode', e);
   }
@@ -531,12 +541,18 @@ function renderFullUI() {
           </svg>
           <div class="center-content">
             <div class="lock-icon">${lockScreenState.task ? (ICONS[lockScreenState.task.icon] || ICONS.bell) : ICONS.eye}</div>
-            <div class="lock-seconds">${lockScreenState.remaining}</div>
-            <div class="lock-unit">秒</div>
+            <div class="lock-seconds">${lockScreenState.waitingConfirm ? '✓' : lockScreenState.remaining}</div>
+            <div class="lock-unit">${lockScreenState.waitingConfirm ? '完成' : '秒'}</div>
           </div>
         </div>
-        <div class="lock-title">${lockScreenState.task?.title || '休息时间'}</div>
-        <div class="lock-message">${lockScreenState.task?.desc || '让身体和眼睛休息一下吧~'}</div>
+        <div class="lock-title">${lockScreenState.waitingConfirm ? '休息时间到！' : (lockScreenState.task?.title || '休息时间')}</div>
+        <div class="lock-message">${lockScreenState.waitingConfirm ? '您完成休息了吗？点击下方按钮确认~' : (lockScreenState.task?.desc || '让身体和眼睛休息一下吧~')}</div>
+        ${lockScreenState.waitingConfirm ? `
+        <button class="confirm-btn" id="confirmBtn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          已完成休息
+        </button>
+        ` : `
         <button class="unlock-btn" id="unlockBtn">
           <div class="unlock-progress"></div>
           <div class="unlock-text">
@@ -544,10 +560,11 @@ function renderFullUI() {
             长按 3 秒紧急解锁
           </div>
         </button>
+        `}
       </div>
     </div>
 
-    <div class="footer">健康办公助手 v1.4.7 · 愿你每天都有好身体</div>
+    <div class="footer">健康办公助手 v1.4.8 · 愿你每天都有好身体</div>
   `;
 
   bindEvents();
@@ -662,6 +679,11 @@ function bindEvents() {
     });
     unlockBtn.addEventListener('touchend', cancelUnlockPress);
     unlockBtn.addEventListener('touchcancel', cancelUnlockPress);
+  }
+
+  const confirmBtn = document.getElementById('confirmBtn');
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', endLockScreen);
   }
 }
 
