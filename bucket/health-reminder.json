@@ -11,13 +11,10 @@
         }
     },
     "installer": {
-        "script": "Start-Process \"$dir\\health-reminder_$version_x64-setup.exe\" -ArgumentList '/S' -Wait"
+        "script": "Start-Process \"$dir\\$fname\" -ArgumentList '/S' -Wait"
     },
     "uninstaller": {
-        "script": [
-            "$uninstaller = \"$env:LOCALAPPDATA\\health-reminder\\uninstall.exe\"",
-            "if (Test-Path $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait }"
-        ]
+        "script": "Start-Process \"$env:LOCALAPPDATA\\health-reminder\\uninstall.exe\" -ArgumentList '/S' -Wait -ErrorAction SilentlyContinue"
     },
     "checkver": { "github": "https://github.com/kaima2022/desk-reminder" },
     "autoupdate": {
