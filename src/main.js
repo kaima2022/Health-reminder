@@ -38,6 +38,7 @@ let stats = {
   workMinutes: 0,
 };
 let isPaused = false;
+let isSystemLocked = false;
 let workStartTime = Date.now();
 let activePopup = null;
 let lockScreenState = {
@@ -120,6 +121,18 @@ async function init() {
   listen('reset-all-tasks', () => {
     resetAll();
   });
+
+  listen('toggle-pause', () => {
+    togglePause();
+  });
+
+  listen('system-locked', () => {
+    isSystemLocked = true;
+  });
+
+  listen('system-unlocked', () => {
+    isSystemLocked = false;
+  });
 }
 
 async function loadSettings() {
@@ -154,14 +167,13 @@ function saveStats() {
 }
 
 function tick() {
-  if (isPaused) return;
+  if (isPaused || isSystemLocked || lockScreenState.active) return;
   stats.workMinutes = Math.floor((Date.now() - workStartTime) / 60000);
   
   settings.tasks.forEach(task => {
     if (task.enabled && countdowns[task.id] > 0) {
       countdowns[task.id]--;
       if (countdowns[task.id] === 0) {
-        // 核心改进：触发提醒时立即重置计时，实现并行计时
         countdowns[task.id] = task.interval * 60; 
         triggerNotification(task);
       }
@@ -564,7 +576,7 @@ function renderFullUI() {
       </div>
     </div>
 
-    <div class="footer">健康办公助手 v1.4.8 · 愿你每天都有好身体</div>
+    <div class="footer">健康办公助手 v1.4.9 · 愿你每天都有好身体</div>
   `;
 
   bindEvents();

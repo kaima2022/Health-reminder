@@ -9,8 +9,90 @@ use tauri::{
 use tauri_plugin_notification::NotificationExt;
 use url::form_urlencoded;
 
+#[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicBool, Ordering};
+
 struct TrayState(Mutex<Option<TrayIcon>>);
 struct LockState(Mutex<Vec<String>>);
+
+#[cfg(target_os = "windows")]
+static SYSTEM_LOCKED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_os = "windows")]
+fn start_session_monitor(app_handle: tauri::AppHandle) {
+    use windows::Win32::System::RemoteDesktop::{
+        WTSRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DispatchMessageW, GetMessageW, RegisterClassW,
+        TranslateMessage, CS_HREDRAW, CS_VREDRAW, MSG, WINDOW_EX_STYLE, WNDCLASSW, WS_OVERLAPPED,
+        WM_WTSSESSION_CHANGE,
+    };
+    use windows::Win32::Foundation::HWND;
+    use windows::core::{PCWSTR, w};
+
+    const WTS_SESSION_LOCK: u32 = 0x7;
+    const WTS_SESSION_UNLOCK: u32 = 0x8;
+
+    std::thread::spawn(move || {
+        unsafe {
+            let class_name = w!("DeskReminderSessionMonitor");
+
+            let wc = WNDCLASSW {
+                style: CS_HREDRAW | CS_VREDRAW,
+                lpfnWndProc: Some(session_wnd_proc),
+                hInstance: std::mem::zeroed(),
+                lpszClassName: class_name,
+                ..std::mem::zeroed()
+            };
+
+            RegisterClassW(&wc);
+
+            let hwnd = CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                class_name,
+                PCWSTR::null(),
+                WS_OVERLAPPED,
+                0, 0, 0, 0,
+                HWND::default(),
+                None,
+                None,
+                None,
+            ).unwrap_or(HWND::default());
+
+            if hwnd.0 != std::ptr::null_mut() {
+                let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
+
+                let mut msg = MSG::default();
+                while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
+                    if msg.message == WM_WTSSESSION_CHANGE {
+                        let wparam = msg.wParam.0 as u32;
+                        if wparam == WTS_SESSION_LOCK {
+                            SYSTEM_LOCKED.store(true, Ordering::SeqCst);
+                            let _ = app_handle.emit("system-locked", ());
+                        } else if wparam == WTS_SESSION_UNLOCK {
+                            SYSTEM_LOCKED.store(false, Ordering::SeqCst);
+                            let _ = app_handle.emit("system-unlocked", ());
+                        }
+                    }
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+            }
+        }
+    });
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn session_wnd_proc(
+    hwnd: windows::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::UI::WindowsAndMessaging::DefWindowProcW;
+    DefWindowProcW(hwnd, msg, wparam, lparam)
+}
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct LockTaskArgs {
@@ -216,7 +298,8 @@ pub fn run() {
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
             let reset = MenuItem::with_id(app, "reset", "重置所有任务", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &reset, &quit])?;
+            let pause = MenuItem::with_id(app, "pause", "暂停/继续", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &pause, &reset, &quit])?;
             
             let tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -235,6 +318,9 @@ pub fn run() {
                         }
                         "reset" => {
                             let _ = app.emit("reset-all-tasks", ());
+                        }
+                        "pause" => {
+                            let _ = app.emit("toggle-pause", ());
                         }
                         _ => {}
                     }
@@ -255,6 +341,9 @@ pub fn run() {
                 .build(app)?;
             
             *app.state::<TrayState>().0.lock().unwrap() = Some(tray);
+            
+            #[cfg(target_os = "windows")]
+            start_session_monitor(app.handle().clone());
             
             Ok(())
         })
