@@ -7,6 +7,8 @@
     "core:default",
     "notification:default",
     "autostart:default",
-    "shell:default"
+    "shell:default",
+    "updater:default",
+    "process:default"
   ]
 }

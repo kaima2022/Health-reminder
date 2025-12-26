@@ -1,7 +1,7 @@
 {
   "name": "health-reminder",
   "private": true,
-  "version": "1.4.9",
+  "version": "1.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,9 @@
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-autostart": "^2.5.1",
-    "@tauri-apps/plugin-notification": "^2.3.3"
+    "@tauri-apps/plugin-notification": "^2.3.3",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.9.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",

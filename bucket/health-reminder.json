@@ -1,13 +1,13 @@
 {
     "$schema": "https://raw.githubusercontent.com/ScoopInstaller/Scoop/master/schema.json",
-    "version": "1.4.9",
+    "version": "1.5.0",
     "description": "健康办公助手 - 智能化的久坐、补水与用眼休息提醒工具",
     "homepage": "https://github.com/kaima2022/desk-reminder",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/kaima2022/desk-reminder/releases/download/v1.4.9/health-reminder_1.4.9_x64-setup.exe",
-            "hash": "e8d5329b5514b7bb7838e76b37737d2dd4ee068addc30f6134bfcc942ca3a975"
+            "url": "https://github.com/kaima2022/desk-reminder/releases/download/v1.5.0/health-reminder_1.5.0_x64-setup.exe",
+            "hash": ""
         }
     },
     "installer": {

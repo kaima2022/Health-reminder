@@ -4,7 +4,7 @@
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://tauri.app/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.4.9-orange?style=flat-square)](https://github.com/)
+[![Version](https://img.shields.io/badge/Version-1.5.0-orange?style=flat-square)](https://github.com/)
 
 在快节奏的数字时代，健康的身体是高效生产力的基石。**健康办公助手** 是一款基于 Rust 与 Tauri 开发的高性能桌面应用，旨在通过智能化的任务排程与多维提醒，帮助你在专注工作的同时，科学地进行久坐、补水与用眼休息。
 
@@ -29,7 +29,11 @@
 </p>
 
 ### 托盘显示
-<img width="176" height="184" alt="image" src="https://github.com/user-attachments/assets/f7b40cf9-bf2e-4459-84f8-72ee05a4a549" />     <img width="300" height="196" alt="image" src="https://github.com/user-attachments/assets/66c1c52e-d8ef-4d45-afb7-bf01bb21a422" />
+<p align="center">
+  <img width="176" height="184" alt="托盘图标" src="https://github.com/user-attachments/assets/f7b40cf9-bf2e-4459-84f8-72ee05a4a549" />
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <img width="300" height="196" alt="托盘菜单" src="https://github.com/user-attachments/assets/66c1c52e-d8ef-4d45-afb7-bf01bb21a422" />
+</p>
 
 
 ### 锁屏功能（选择开启）
@@ -42,6 +46,11 @@
   <img src="./docs/screenshots/锁屏.png" alt="Lock screen" width="70%">
 </p>
 
+### 设置界面
+
+<p align="center">
+  <img src="./docs/screenshots/settings.png" alt="设置界面" width="30%">
+</p>
 
 
 ---
@@ -130,6 +139,13 @@ npm run tauri build
 ## 📜 版本记录
 
 > **请下载最新安装包重新安装（会自动覆盖）**
+
+### v1.5.0 (2025-12-26)
+- **自动更新系统**：启动时自动检测新版本，支持设置中手动检查，显示版本状态，一键完成更新安装。
+- **安全签名验证**：采用非对称加密签名机制，GitHub Actions 自动构建、签名并生成更新文件。
+- **优化用户体验**：Toast 消息提示替代弹窗，3秒自动消失，操作流畅不打断。
+
+
 
 ### v1.4.9 (2025-12-25)
 - **锁屏停止计时**：锁屏期间暂停所有任务计时，避免休息时错过提醒。

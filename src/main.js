@@ -2,6 +2,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { requestPermission } from '@tauri-apps/plugin-notification';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 
 const ICONS = {
   sit: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="M12 6v6l4 2"></path></svg>`,
@@ -49,6 +51,11 @@ let lockScreenState = {
   unlockTimer: null,
   waitingConfirm: false,
 }; 
+
+let updateInfo = null;
+let isUpdating = false;
+let isCheckingUpdate = false;
+let updateMessage = null; 
 
 async function init() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -133,6 +140,69 @@ async function init() {
   listen('system-unlocked', () => {
     isSystemLocked = false;
   });
+
+  checkForUpdates();
+}
+
+async function checkForUpdates(manual = false) {
+  if (manual) {
+    isCheckingUpdate = true;
+    updateMessage = null;
+    renderFullUI();
+  }
+
+  try {
+    const update = await check();
+    if (update) {
+      updateInfo = {
+        version: update.version,
+        body: update.body,
+        update: update
+      };
+      updateMessage = null;
+      renderFullUI();
+    } else if (manual) {
+      // 手动检查且没有更新时显示提示
+      updateMessage = { type: 'success', text: '已是最新版本！' };
+      renderFullUI();
+      setTimeout(() => {
+        updateMessage = null;
+        renderFullUI();
+      }, 3000);
+    }
+  } catch (e) {
+    console.error('Update check failed:', e);
+    if (manual) {
+      const errorMsg = e?.response?.data || e?.message || '网络错误，请稍后重试';
+      updateMessage = { type: 'error', text: '检查更新失败：' + errorMsg };
+      renderFullUI();
+      setTimeout(() => {
+        updateMessage = null;
+        renderFullUI();
+      }, 3000);
+    }
+  } finally {
+    if (manual) {
+      isCheckingUpdate = false;
+      renderFullUI();
+    }
+  }
+}
+
+async function performUpdate() {
+  if (!updateInfo || isUpdating) return;
+  
+  isUpdating = true;
+  renderFullUI();
+  
+  try {
+    await updateInfo.update.downloadAndInstall();
+    await relaunch();
+  } catch (e) {
+    console.error('Update failed:', e);
+    isUpdating = false;
+    renderFullUI();
+  }
 }
 
 async function loadSettings() {
@@ -525,7 +595,25 @@ function renderFullUI() {
         <label>开机自启动</label>
         <div class="toggle ${settings.autoStart ? 'active' : ''}" id="startToggle"></div>
       </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <label>版本更新</label>
+          <span class="setting-desc">当前版本 v1.5.0${updateInfo ? `（有新版本 v${updateInfo.version}）` : '（已是最新）'}</span>
+        </div>
+        <button class="check-update-btn" id="checkUpdateBtn" ${isCheckingUpdate ? 'disabled' : ''}>
+          ${isCheckingUpdate ? '<span class="spinner"></span> 检查中...' : (updateInfo ? '立即更新' : '检查更新')}
+        </button>
+      </div>
     </div>
+
+    ${updateMessage ? `
+    <div class="toast-message ${updateMessage.type === 'error' ? 'error' : 'success'}">
+      <div class="toast-content">
+        <span class="toast-icon">${updateMessage.type === 'error' ? '❌' : '✅'}</span>
+        <span class="toast-text">${updateMessage.text}</span>
+      </div>
+    </div>
+    ` : ''}
 
     <div class="notification-popup ${activePopup ? 'show' : ''}">
       <div class="notification-content">
@@ -577,7 +665,19 @@ function renderFullUI() {
       </div>
     </div>
 
-    <div class="footer">健康办公助手 v1.4.9 · 愿你每天都有好身体</div>
+    <div class="footer">健康办公助手 v1.5.0 · 愿你每天都有好身体</div>
+
+    ${updateInfo ? `
+    <div class="update-banner ${isUpdating ? 'updating' : ''}">
+      <div class="update-content">
+        <div class="update-info">
+          <span class="update-icon">🎉</span>
+          <span class="update-text">${isUpdating ? '正在更新...' : `发现新版本 v${updateInfo.version}`}</span>
+        </div>
+        ${!isUpdating ? `<button class="update-btn" id="updateBtn">立即更新</button>` : `<div class="update-spinner"></div>`}
+      </div>
+    </div>
+    ` : ''}
   `;
 
   bindEvents();
@@ -697,6 +797,24 @@ function bindEvents() {
   const confirmBtn = document.getElementById('confirmBtn');
   if (confirmBtn) {
     confirmBtn.addEventListener('click', endLockScreen);
+  }
+
+  const updateBtn = document.getElementById('updateBtn');
+  if (updateBtn) {
+    updateBtn.addEventListener('click', performUpdate);
+  }
+
+  const checkUpdateBtn = document.getElementById('checkUpdateBtn');
+  if (checkUpdateBtn) {
+    checkUpdateBtn.addEventListener('click', () => {
+      if (updateInfo) {
+        // 如果已经有更新信息，执行更新
+        performUpdate();
+      } else {
+        // 否则检查更新
+        checkForUpdates(true);
+      }
+    });
   }
 }
 

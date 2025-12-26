@@ -68,12 +68,14 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Health Reminder ${{ github.ref_name }}'
           releaseBody: |
             ## 健康提醒助手 ${{ github.ref_name }}
-            
+
             ### 🛠️ 跨平台支持
             - **Windows**: 提供 NSIS (.exe) 安装程序。
             - **macOS**: 支持 Intel (.x86_64) 与 Apple Silicon (.aarch64) 芯片。
@@ -84,8 +86,54 @@ jobs:
             - 适配 Apple 设计语言的高级 UI 仪表盘。
             - 原生系统级通知支持。
             - 自定义任务管理与常用预设时间。
-            
+
             🚀 感谢使用！请选择适合您平台的版本下载。
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
+
+  # 更新 Scoop bucket 的 hash
+  update-scoop-hash:
+    needs: release
+    runs-on: ubuntu-latest
+    if: success()
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows installer
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG=${{ github.ref_name }}
+          ASSET_NAME=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[] | select(.name | endswith("_x64-setup.exe")) | .name')
+          gh release download "$RELEASE_TAG" -p "*_x64-setup.exe" -D "$GITHUB_WORKSPACE"
+
+      - name: Calculate SHA256 hash
+        id: hash
+        run: |
+          HASH=$(sha256sum *.exe | awk '{print $1}')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Calculated hash: $HASH"
+
+      - name: Update bucket manifest
+        run: |
+          HASH="${{ steps.hash.outputs.hash }}"
+          VERSION=${{ github.ref_name }}
+          VERSION=${VERSION#v}  # 移除 v 前缀
+
+          # 更新 bucket/health-reminder.json
+          jq --arg version "$VERSION" --arg hash "$HASH" \
+            '.version = $version | .hash = $hash' \
+            bucket/health-reminder.json > bucket/health-reminder.json.tmp
+
+          mv bucket/health-reminder.json.tmp bucket/health-reminder.json
+
+      - name: Commit and push changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add bucket/health-reminder.json
+          git commit -m "chore: update scoop manifest hash for ${{ github.ref_name }}"
+          git push
