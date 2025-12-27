@@ -34,6 +34,7 @@ struct TaskTimer {
     config: TaskConfig,
     reset_time: Instant,
     triggered: bool,  // 本轮是否已触发
+    disabled_at: Option<Instant>,  // 禁用时的时间点，用于计算暂停时长
 }
 
 struct TimerState {
@@ -178,32 +179,57 @@ fn sync_tasks(tasks: Vec<TaskConfig>) {
     for task in tasks {
         if let Some(existing) = state.tasks.get(&task.id) {
             // 任务已存在
-            let should_reset =
-                // interval 变了
-                existing.config.interval != task.interval ||
-                // 从禁用变为启用，需要重置计时
-                (!existing.config.enabled && task.enabled);
+            let interval_changed = existing.config.interval != task.interval;
+            let was_disabled = !existing.config.enabled;
+            let is_now_enabled = task.enabled;
+            let was_enabled = existing.config.enabled;
+            let is_now_disabled = !task.enabled;
 
-            if should_reset {
+            if interval_changed {
+                // interval 变了，重置计时
                 new_tasks.insert(task.id.clone(), TaskTimer {
                     config: task,
                     reset_time: now,
                     triggered: false,
+                    disabled_at: None,
                 });
-            } else {
-                // 保留计时状态
+            } else if was_disabled && is_now_enabled {
+                // 从禁用变为启用，补偿禁用期间的时间
+                let mut new_reset_time = existing.reset_time;
+                if let Some(disabled_at) = existing.disabled_at {
+                    let disabled_duration = now.duration_since(disabled_at);
+                    new_reset_time += disabled_duration;
+                }
+                new_tasks.insert(task.id.clone(), TaskTimer {
+                    config: task,
+                    reset_time: new_reset_time,
+                    triggered: existing.triggered,
+                    disabled_at: None,
+                });
+            } else if was_enabled && is_now_disabled {
+                // 从启用变为禁用，记录禁用时间点
                 new_tasks.insert(task.id.clone(), TaskTimer {
                     config: task,
                     reset_time: existing.reset_time,
                     triggered: existing.triggered,
+                    disabled_at: Some(now),
+                });
+            } else {
+                // 状态没变，保留
+                new_tasks.insert(task.id.clone(), TaskTimer {
+                    config: task,
+                    reset_time: existing.reset_time,
+                    triggered: existing.triggered,
+                    disabled_at: existing.disabled_at,
                 });
             }
         } else {
             // 新任务
             new_tasks.insert(task.id.clone(), TaskTimer {
-                config: task,
+                config: task.clone(),
                 reset_time: now,
                 triggered: false,
+                disabled_at: if task.enabled { None } else { Some(now) },
             });
         }
     }
@@ -239,9 +265,14 @@ fn timer_resume() {
 #[tauri::command]
 fn timer_reset_task(task_id: String) {
     let mut state = get_timer_state().lock().unwrap();
+    let now = Instant::now();
     if let Some(timer) = state.tasks.get_mut(&task_id) {
-        timer.reset_time = Instant::now();
+        timer.reset_time = now;
         timer.triggered = false;
+        // 如果任务禁用，也更新 disabled_at
+        if timer.disabled_at.is_some() {
+            timer.disabled_at = Some(now);
+        }
     }
 }
 
@@ -252,6 +283,10 @@ fn timer_reset_all() {
     for timer in state.tasks.values_mut() {
         timer.reset_time = now;
         timer.triggered = false;
+        // 如果任务禁用，也更新 disabled_at
+        if timer.disabled_at.is_some() {
+            timer.disabled_at = Some(now);
+        }
     }
 }
 
@@ -262,7 +297,15 @@ fn get_countdowns() -> Vec<CountdownInfo> {
 
     state.tasks.values().map(|timer| {
         let total_secs = timer.config.interval * 60;
-        let elapsed = now.duration_since(timer.reset_time).as_secs();
+
+        // 如果任务被禁用，使用禁用时间点计算 elapsed，这样时间就"冻结"了
+        let effective_now = if let Some(disabled_at) = timer.disabled_at {
+            disabled_at
+        } else {
+            now
+        };
+
+        let elapsed = effective_now.duration_since(timer.reset_time).as_secs();
         let remaining = if elapsed >= total_secs { 0 } else { total_secs - elapsed };
 
         CountdownInfo {
