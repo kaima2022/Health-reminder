@@ -156,39 +156,158 @@ body {
 .reminder-card {
   background: var(--bg-card);
   border-radius: 12px;
-  padding: 16px 20px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
   border: 1px solid var(--border);
   transition: all 0.2s ease;
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 .reminder-card:hover {
-  background: var(--bg-hover);
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
 }
-.reminder-card .icon {
-  width: 48px;
-  height: 48px;
+
+.card-main {
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: var(--bg);
-  border-radius: 12px;
-  color: var(--primary);
+  gap: 16px;
+  padding: 16px 20px;
 }
+
+.reminder-card .progress-mini {
+  width: 44px;
+  height: 44px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.progress-mini svg {
+  transform: rotate(-90deg);
+}
+
+.progress-mini .bg {
+  fill: none;
+  stroke: var(--bg);
+  stroke-width: 4;
+}
+
+.progress-mini .progress {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s linear;
+}
+
 .reminder-card .info {
   flex: 1;
+  min-width: 0;
 }
+
 .reminder-card .title {
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  outline: none;
 }
-.reminder-card .desc {
+
+.reminder-card .time-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reminder-card .time-unit {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.reminder-card .time-remaining {
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.card-actions .remove-btn {
+  color: var(--danger);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.card-actions .remove-btn:hover {
+  opacity: 1;
+}
+
+/* 卡片底部选项 */
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+.footer-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.footer-option input[type="checkbox"] {
+  display: none;
+}
+
+.footer-option .checkbox-custom {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  background: white;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.footer-option input[type="checkbox"]:checked + .checkbox-custom {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.footer-option input[type="checkbox"]:checked + .checkbox-custom::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.footer-option .lock-input {
+  width: 48px;
+  padding: 4px 6px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: var(--text);
+  text-align: center;
+}
+
+.footer-option .lock-input:focus {
+  outline: none;
+  border-color: var(--primary);
 }
 .reminder-card .toggle, 
 .setting-row .toggle {
@@ -892,94 +1011,6 @@ body {
   font-size: 0.875rem;
   color: var(--text);
   font-weight: 500;
-}
-
-/* 任务级别额外选项 */
-.task-extra-options {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.idle-reset-option {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-
-.idle-reset-option input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.idle-reset-option .checkmark {
-  position: relative;
-  width: 14px;
-  height: 14px;
-  background: var(--bg);
-  border: 1.5px solid var(--border);
-  border-radius: 3px;
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-
-.idle-reset-option input:checked ~ .checkmark {
-  background: var(--success);
-  border-color: var(--success);
-}
-
-.idle-reset-option .checkmark::after {
-  content: '';
-  position: absolute;
-  display: none;
-  left: 4px;
-  top: 1px;
-  width: 4px;
-  height: 7px;
-  border: solid white;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-.idle-reset-option input:checked ~ .checkmark::after {
-  display: block;
-}
-
-.idle-reset-option .option-label {
-  white-space: nowrap;
-}
-
-.lock-duration-option {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.lock-duration-input {
-  width: 50px;
-  padding: 2px 6px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 0.7rem;
-  color: var(--text);
-  text-align: center;
-}
-
-.lock-duration-input:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-.lock-duration-option .option-label {
-  font-size: 0.7rem;
-  color: var(--text-muted);
 }
 
 /* 空闲阈值设置 */

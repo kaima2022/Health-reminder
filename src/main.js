@@ -584,7 +584,7 @@ function updateLiveValues() {
     if (card) {
       const current = countdowns[task.id] || 0;
       const total = task.interval * 60;
-      const offset = 113 * (1 - current / total);
+      const offset = 126 * (1 - current / total);
       card.querySelector('.progress-mini .progress').style.strokeDashoffset = offset;
       const timeDisplay = card.querySelector('.time-remaining');
       if (timeDisplay) timeDisplay.innerText = `(${formatTime(current)})`;
@@ -619,40 +619,38 @@ function renderFullUI() {
     <div class="reminder-cards">
       ${settings.tasks.map(task => `
         <div class="reminder-card" data-id="${task.id}">
-          <div class="progress-mini" style="cursor:pointer;" title="点击重置" data-reset-id="${task.id}">
-            <svg width="40" height="40" viewBox="0 0 40 40"><circle class="bg" cx="20" cy="20" r="18" /><circle class="progress" cx="20" cy="20" r="18" stroke-dasharray="113" stroke-dashoffset="113" /></svg>
-            <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:var(--primary); pointer-events:none;">${ICONS[task.icon] || ICONS.bell}</div>
-          </div>
-          <div class="info">
-            <div class="title" contenteditable="true" data-id="${task.id}">${task.title}</div>
-            <div class="interval-controls">
-              <div class="input-group">
+          <div class="card-main">
+            <div class="progress-mini" style="cursor:pointer;" title="点击重置" data-reset-id="${task.id}">
+              <svg width="44" height="44" viewBox="0 0 44 44"><circle class="bg" cx="22" cy="22" r="20" /><circle class="progress" cx="22" cy="22" r="20" stroke-dasharray="126" stroke-dashoffset="126" /></svg>
+              <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:var(--primary); pointer-events:none;">${ICONS[task.icon] || ICONS.bell}</div>
+            </div>
+            <div class="info">
+              <div class="title" contenteditable="true" data-id="${task.id}">${task.title}</div>
+              <div class="time-info">
                 <input type="number" class="interval-input" value="${task.interval}" data-id="${task.id}" min="1" max="1440">
-                <span style="font-size:0.8rem; color:var(--text-muted)">分钟 <span class="time-remaining"></span></span>
-              </div>
-              <div class="presets">
-                <button class="preset-btn" data-id="${task.id}" data-val="15">15m</button><button class="preset-btn" data-id="${task.id}" data-val="30">30m</button>
-                <button class="preset-btn" data-id="${task.id}" data-val="45">45m</button><button class="preset-btn" data-id="${task.id}" data-val="60">60m</button>
+                <span class="time-unit">分钟</span>
+                <span class="time-remaining"></span>
               </div>
             </div>
-          </div>
-          <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
-            <div class="toggle ${task.enabled ? 'active' : ''}" data-toggle-id="${task.id}"></div>
-            ${settings.lockScreenEnabled ? `
-            <div class="task-extra-options">
-              <label class="idle-reset-option" title="系统锁屏或空闲时自动重置此任务">
-                <input type="checkbox" class="idle-reset-input" data-id="${task.id}" ${task.autoResetOnIdle ? 'checked' : ''}>
-                <span class="checkmark"></span>
-                <span class="option-label">空闲重置</span>
-              </label>
-              <div class="lock-duration-option">
-                <input type="number" class="lock-duration-input" value="${task.lockDuration || settings.lockDuration}" data-id="${task.id}" min="5" max="3600">
-                <span class="option-label">秒</span>
-              </div>
+            <div class="card-actions">
+              <div class="toggle ${task.enabled ? 'active' : ''}" data-toggle-id="${task.id}"></div>
+              ${!['sit', 'water', 'eye'].includes(task.id) ? `<div class="remove-btn" data-id="${task.id}">${ICONS.trash}</div>` : ''}
             </div>
-            ` : ''}
-            ${!['sit', 'water', 'eye'].includes(task.id) ? `<div class="remove-btn" data-id="${task.id}" style="color:var(--danger); cursor:pointer;">${ICONS.trash}</div>` : ''}
           </div>
+          ${settings.lockScreenEnabled ? `
+          <div class="card-footer">
+            <label class="footer-option" title="用户无操作超过阈值时自动重置">
+              <input type="checkbox" class="idle-reset-input" data-id="${task.id}" ${task.autoResetOnIdle ? 'checked' : ''}>
+              <span class="checkbox-custom"></span>
+              <span>空闲时重置</span>
+            </label>
+            <div class="footer-option">
+              <span>锁屏时长</span>
+              <input type="number" class="lock-input" value="${task.lockDuration || settings.lockDuration}" data-id="${task.id}" min="5" max="3600">
+              <span>秒</span>
+            </div>
+          </div>
+          ` : ''}
         </div>
       `).join('')}
     </div>
@@ -697,7 +695,7 @@ function renderFullUI() {
       <div class="setting-row">
         <div class="setting-info">
           <label>版本更新</label>
-          <span class="setting-desc">当前版本 v1.5.1${updateInfo ? `（有新版本 v${updateInfo.version}）` : ''}</span>
+          <span class="setting-desc">当前版本 v1.5.2${updateInfo ? `（有新版本 v${updateInfo.version}）` : ''}</span>
         </div>
         <button class="check-update-btn" id="checkUpdateBtn" ${isCheckingUpdate ? 'disabled' : ''}>
           ${isCheckingUpdate ? '<span class="spinner"></span> 检查中...' : (updateInfo ? '立即更新' : '检查更新')}
@@ -764,7 +762,7 @@ function renderFullUI() {
       </div>
     </div>
 
-    <div class="footer">健康办公助手 v1.5.1 · 愿你每天都有好身体</div>
+    <div class="footer">健康办公助手 v1.5.2 · 愿你每天都有好身体</div>
 
     ${updateInfo ? `
     <div class="update-banner ${isUpdating ? 'updating' : ''}">
@@ -880,7 +878,7 @@ function bindEvents() {
   });
 
   // 任务级别的锁屏时长输入框
-  document.querySelectorAll('.lock-duration-input').forEach(el => {
+  document.querySelectorAll('.lock-input').forEach(el => {
     el.addEventListener('input', (e) => {
       const id = el.dataset.id;
       const task = settings.tasks.find(t => t.id === id);

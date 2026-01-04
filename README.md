@@ -4,7 +4,7 @@
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://tauri.app/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.5.1-orange?style=flat-square)](https://github.com/)
+[![Version](https://img.shields.io/badge/Version-1.5.2-orange?style=flat-square)](https://github.com/)
 
 在快节奏的数字时代，健康的身体是高效生产力的基石。**健康办公助手** 是一款基于 Rust 与 Tauri 开发的高性能桌面应用，旨在通过智能化的任务排程与多维提醒，帮助你在专注工作的同时，科学地进行久坐、补水与用眼休息。
 
@@ -144,6 +144,13 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.5.2 (2026-01-04)
+- **跨平台空闲检测**：新增系统空闲检测功能，支持 Windows、macOS、Linux 三平台。
+- **空闲自动重置**：用户无操作超过设定阈值时，自动重置已勾选的任务倒计时。
+- **空闲阈值可配置**：支持在设置中自定义空闲检测阈值（1-60 分钟）。
+- **任务级别控制**：每个任务可独立设置是否启用空闲时重置功能。
+- **UI 优化**：统一任务卡片底部区域样式，提升视觉一致性。
 
 ### v1.5.1 (2025-12-27)
 - **后端定时器重构**：将计时逻辑从前端 JavaScript 移至 Rust 后端，解决 macOS App Nap 和窗口最小化时计时器被节流导致倒计时变慢的问题。
