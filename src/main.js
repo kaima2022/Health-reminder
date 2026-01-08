@@ -288,6 +288,16 @@ async function loadSettings() {
     if (saved) {
       const parsed = JSON.parse(saved);
       settings = { ...settings, ...parsed };
+      
+      // 迁移逻辑：确保旧数据中的任务也有新字段
+      settings.tasks = settings.tasks.map(task => {
+        const def = DEFAULT_TASKS.find(d => d.id === task.id);
+        return {
+          preNotificationSeconds: def ? def.preNotificationSeconds : 5,
+          snoozeMinutes: def ? def.snoozeMinutes : 5,
+          ...task
+        };
+      });
     }
   } catch (e) {
     console.log('Using default settings');
@@ -736,11 +746,11 @@ function renderFullUI() {
           <div class="card-footer">
             <div class="footer-option">
               <span>预告</span>
-              <input type="number" class="lock-input pre-notify-input" value="${task.preNotificationSeconds}" data-id="${task.id}" min="0" max="120">
+              <input type="number" class="lock-input pre-notify-input" value="${task.preNotificationSeconds !== undefined ? task.preNotificationSeconds : 5}" data-id="${task.id}" min="0" max="120">
               <span>秒</span>
             </div>
             <div class="footer-option">
-              <span>推迟</span>
+              <span>允许推迟</span>
               <input type="number" class="lock-input snooze-input" value="${task.snoozeMinutes || 5}" data-id="${task.id}" min="1" max="60">
               <span>分钟</span>
             </div>
