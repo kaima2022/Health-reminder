@@ -33,9 +33,10 @@ let settings = {
   lockDuration: 20,
   idleThreshold: 300,  // 空闲阈值，秒，默认 5 分钟
   autoUnlock: true,    // 倒计时结束自动解锁
-  preNotificationSeconds: 30, // 锁屏/提醒前预告时间（秒）
+  preNotificationSeconds: 5,  // 锁屏/提醒前预告时间（秒）
   strictMode: false,   // 严格模式：隐藏紧急解锁按钮
   snoozeMinutes: 5,    // 推迟时间（分钟）
+  resetOnIdle: true,   // 空闲时重置所有任务
 };
 
 let countdowns = {};  // 现在由后端事件更新
@@ -73,7 +74,7 @@ async function syncTasksToBackend() {
     interval: t.interval,
     enabled: t.enabled,
     icon: t.icon,
-    auto_reset_on_idle: t.autoResetOnIdle || false
+    auto_reset_on_idle: settings.resetOnIdle // 使用全局设置
   }));
   await invoke('sync_tasks', { tasks: tasksForBackend }).catch(console.error);
 }
@@ -153,7 +154,7 @@ async function init() {
     const updates = event.payload;
     updates.forEach(info => {
       countdowns[info.id] = info.remaining;
-      snoozedStatus[info.id] = info.snoozed;
+      snoozedStatus[info.id] = { active: info.snoozed, remaining: info.snooze_remaining };
       
       // 预提醒逻辑
       if (info.enabled && !isIdle && !isPaused && settings.preNotificationSeconds > 0 && info.remaining === settings.preNotificationSeconds) {
@@ -528,6 +529,16 @@ function removeTask(id) {
   renderFullUI();
 }
 
+function resetTask(id) {
+  const task = settings.tasks.find(t => t.id === id);
+  if (task) {
+    countdowns[id] = task.interval * 60;
+    // 通知后端重置该任务
+    invoke('timer_reset_task', { taskId: id }).catch(console.error);
+    updateLiveValues();
+  }
+}
+
 function updateTask(id, updates) {
   const task = settings.tasks.find(t => t.id === id);
   if (task) {
@@ -641,7 +652,16 @@ function updateLiveValues() {
       const offset = 126 * (1 - current / total);
       card.querySelector('.progress-mini .progress').style.strokeDashoffset = offset;
       const timeDisplay = card.querySelector('.time-remaining');
-      if (timeDisplay) timeDisplay.innerText = `(${formatTime(current)})`;
+      if (timeDisplay) {
+        const snoozeState = snoozedStatus[task.id];
+        if (snoozeState && snoozeState.active) {
+          timeDisplay.innerText = `推迟中: ${formatTime(snoozeState.remaining)}`;
+          timeDisplay.style.color = 'var(--warning)';
+        } else {
+          timeDisplay.innerText = `(${formatTime(current)})`;
+          timeDisplay.style.color = '';
+        }
+      }
     }
   });
 
@@ -672,7 +692,8 @@ function renderFullUI() {
 
     <div class="reminder-cards">
       ${settings.tasks.map(task => {
-        const isSnoozed = snoozedStatus[task.id];
+        const snoozeState = snoozedStatus[task.id];
+        const isSnoozed = snoozeState && snoozeState.active;
         return `
         <div class="reminder-card ${isSnoozed ? 'snoozed' : ''}" data-id="${task.id}">
           <div class="card-main">
@@ -690,23 +711,19 @@ function renderFullUI() {
             </div>
             <div class="card-actions">
               <div class="toggle ${task.enabled ? 'active' : ''}" data-toggle-id="${task.id}"></div>
+              <div class="reset-task-btn" title="重置此任务" data-reset-id="${task.id}" style="cursor:pointer; color:var(--primary); padding:4px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+              </div>
               ${!['sit', 'water', 'eye'].includes(task.id) ? `<div class="remove-btn" data-id="${task.id}">${ICONS.trash}</div>` : ''}
             </div>
           </div>
-          ${settings.lockScreenEnabled ? `
           <div class="card-footer">
-            <label class="footer-option" title="用户无操作超过阈值时自动重置">
-              <input type="checkbox" class="idle-reset-input" data-id="${task.id}" ${task.autoResetOnIdle ? 'checked' : ''}>
-              <span class="checkbox-custom"></span>
-              <span>空闲时重置</span>
-            </label>
             <div class="footer-option">
               <span>锁屏时长</span>
               <input type="number" class="lock-input" value="${task.lockDuration || settings.lockDuration}" data-id="${task.id}" min="5" max="3600">
               <span>秒</span>
             </div>
           </div>
-          ` : ''}
         </div>
         `;
       }).join('')}
@@ -734,6 +751,13 @@ function renderFullUI() {
           <span class="setting-desc">休息结束后自动退出锁屏，无需手动确认</span>
         </div>
         <div class="toggle ${settings.autoUnlock ? 'active' : ''}" id="autoUnlockToggle"></div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <label>空闲时重置任务</label>
+          <span class="setting-desc">当用户离开电脑（空闲）时自动重置计时</span>
+        </div>
+        <div class="toggle ${settings.resetOnIdle ? 'active' : ''}" id="resetOnIdleToggle"></div>
       </div>
       <div class="setting-row">
         <div class="setting-info">
@@ -921,6 +945,11 @@ function bindEvents() {
         settings.strictMode = !settings.strictMode;
         el.classList.toggle('active', settings.strictMode);
         saveSettings();
+      } else if (el.id === 'resetOnIdleToggle') {
+        settings.resetOnIdle = !settings.resetOnIdle;
+        el.classList.toggle('active', settings.resetOnIdle);
+        saveSettings();
+        syncTasksToBackend();
       }
     });
   });
@@ -952,15 +981,31 @@ function bindEvents() {
     });
   });
 
+  // 进度条点击重置 (保留旧逻辑)
   document.querySelectorAll('.progress-mini[data-reset-id]').forEach(el => {
     el.addEventListener('click', () => {
       const id = el.dataset.resetId;
-      const task = settings.tasks.find(t => t.id === id);
-      if (task) {
-        countdowns[id] = task.interval * 60;
-        // 通知后端重置该任务
-        invoke('timer_reset_task', { taskId: id }).catch(console.error);
-        updateLiveValues();
+      resetTask(id);
+    });
+  });
+
+  // 新增：旋转箭头按钮重置
+  document.querySelectorAll('.reset-task-btn[data-reset-id]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      // 阻止冒泡防止触发其他点击事件
+      e.stopPropagation();
+      const id = el.dataset.resetId;
+      resetTask(id);
+      
+      // 添加旋转动画效果
+      const svg = el.querySelector('svg');
+      if(svg) {
+        svg.style.transition = 'transform 0.5s ease';
+        svg.style.transform = 'rotate(360deg)';
+        setTimeout(() => {
+          svg.style.transition = 'none';
+          svg.style.transform = 'rotate(0deg)';
+        }, 500);
       }
     });
   });
@@ -969,18 +1014,8 @@ function bindEvents() {
     el.addEventListener('click', () => removeTask(el.dataset.id));
   });
 
-  // 任务级别的空闲重置勾选框
-  document.querySelectorAll('.idle-reset-input').forEach(el => {
-    el.addEventListener('change', (e) => {
-      const id = el.dataset.id;
-      const task = settings.tasks.find(t => t.id === id);
-      if (task) {
-        task.autoResetOnIdle = e.target.checked;
-        saveSettings();
-        syncTasksToBackend();
-      }
-    });
-  });
+  // 移除旧的 idle-reset-input 监听器 (已不再渲染)
+  // document.querySelectorAll('.idle-reset-input')...
 
   // 任务级别的锁屏时长输入框
   document.querySelectorAll('.lock-input').forEach(el => {

@@ -280,6 +280,7 @@ struct CountdownInfo {
     total: u64,      // 总秒数
     enabled: bool,
     snoozed: bool,   // 是否推迟中
+    snooze_remaining: u64, // 推迟剩余时间
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -449,6 +450,12 @@ fn get_countdowns() -> Vec<CountdownInfo> {
 
         let elapsed = effective_now.saturating_duration_since(timer.reset_time).as_secs();
         let remaining = if elapsed >= total_secs { 0 } else { total_secs - elapsed };
+        
+        let snooze_remaining = if timer.reset_time > now {
+            timer.reset_time.duration_since(now).as_secs()
+        } else {
+            0
+        };
 
         CountdownInfo {
             id: timer.config.id.clone(),
@@ -456,6 +463,7 @@ fn get_countdowns() -> Vec<CountdownInfo> {
             total: total_secs,
             enabled: timer.config.enabled,
             snoozed: timer.snoozed,
+            snooze_remaining,
         }
     }).collect()
 }
