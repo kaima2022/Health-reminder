@@ -32,3 +32,4 @@ src-tauri/gen/
 docs/lock-screen-feature.md
 build-with-signing.ps1
 run-with-signining.ps1
+docs/project_summary_and_context.md
