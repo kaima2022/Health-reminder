@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use std::thread;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent, TrayIcon},
     Manager, WindowEvent, State, Emitter, WebviewWindowBuilder, WebviewUrl, AppHandle,
 };
@@ -291,78 +291,123 @@ struct TaskTriggeredPayload {
     icon: String,
 }
 
-#[tauri::command]
-fn sync_tasks(tasks: Vec<TaskConfig>) {
-    let mut state = get_timer_state().lock().unwrap();
-    let now = Instant::now();
+fn rebuild_tray_menu(app: &AppHandle) {
+    let state = get_timer_state().lock().unwrap();
+    let is_paused = state.paused;
+    let mut tasks: Vec<TaskConfig> = state.tasks.values().map(|t| t.config.clone()).collect();
+    tasks.sort_by(|a, b| a.id.cmp(&b.id)); 
+    drop(state);
 
-    // 保留现有任务的计时状态，只更新配置
-    let mut new_tasks: HashMap<String, TaskTimer> = HashMap::new();
+    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>).unwrap();
+    let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>).unwrap();
+    let reset_all = MenuItem::with_id(app, "reset", "重置所有任务", true, None::<&str>).unwrap();
+    let pause = MenuItem::with_id(app, "pause", if is_paused { "继续" } else { "暂停" }, true, None::<&str>).unwrap();
 
+    let mut reset_items = Vec::new();
     for task in tasks {
-        if let Some(existing) = state.tasks.get(&task.id) {
-            // 任务已存在
-            let interval_changed = existing.config.interval != task.interval;
-            let was_disabled = !existing.config.enabled;
-            let is_now_enabled = task.enabled;
-            let was_enabled = existing.config.enabled;
-            let is_now_disabled = !task.enabled;
+        let id = format!("reset_task_{}", task.id);
+        let title = format!("重置: {}", task.title);
+        let item = MenuItem::with_id(app, &id, &title, true, None::<&str>).unwrap();
+        reset_items.push(item);
+    }
+    
+    let reset_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = reset_items.iter().map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
+    let reset_submenu = Submenu::with_items(app, "重置单个任务", true, &reset_refs).unwrap();
 
-            if interval_changed {
-                // interval 变了，重置计时
+    let menu = Menu::with_items(app, &[
+        &show, 
+        &pause, 
+        &reset_all, 
+        &reset_submenu, 
+        &quit
+    ]).unwrap();
+
+    let tray_state = app.state::<TrayState>();
+    let guard = tray_state.0.lock().unwrap();
+    if let Some(tray) = guard.as_ref() {
+        let _ = tray.set_menu(Some(menu));
+    }
+    
+    let pause_state = app.state::<PauseMenuState>();
+    *pause_state.0.lock().unwrap() = Some(pause);
+}
+
+#[tauri::command]
+fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
+    {
+        let mut state = get_timer_state().lock().unwrap();
+        let now = Instant::now();
+
+        // 保留现有任务的计时状态，只更新配置
+        let mut new_tasks: HashMap<String, TaskTimer> = HashMap::new();
+
+        for task in tasks {
+            if let Some(existing) = state.tasks.get(&task.id) {
+                // 任务已存在
+                let interval_changed = existing.config.interval != task.interval;
+                let was_disabled = !existing.config.enabled;
+                let is_now_enabled = task.enabled;
+                let was_enabled = existing.config.enabled;
+                let is_now_disabled = !task.enabled;
+
+                if interval_changed {
+                    // interval 变了，重置计时
+                    new_tasks.insert(task.id.clone(), TaskTimer {
+                        config: task,
+                        reset_time: now,
+                        triggered: false,
+                        disabled_at: None,
+                        snoozed: false,
+                    });
+                } else if was_disabled && is_now_enabled {
+                    // 从禁用变为启用，补偿禁用期间的时间
+                    let mut new_reset_time = existing.reset_time;
+                    if let Some(disabled_at) = existing.disabled_at {
+                        let disabled_duration = now.duration_since(disabled_at);
+                        new_reset_time += disabled_duration;
+                    }
+                    new_tasks.insert(task.id.clone(), TaskTimer {
+                        config: task,
+                        reset_time: new_reset_time,
+                        triggered: existing.triggered,
+                        disabled_at: None,
+                        snoozed: existing.snoozed,
+                    });
+                } else if was_enabled && is_now_disabled {
+                    // 从启用变为禁用，记录禁用时间点
+                    new_tasks.insert(task.id.clone(), TaskTimer {
+                        config: task,
+                        reset_time: existing.reset_time,
+                        triggered: existing.triggered,
+                        disabled_at: Some(now),
+                        snoozed: existing.snoozed,
+                    });
+                } else {
+                    // 状态没变，保留
+                    new_tasks.insert(task.id.clone(), TaskTimer {
+                        config: task,
+                        reset_time: existing.reset_time,
+                        triggered: existing.triggered,
+                        disabled_at: existing.disabled_at,
+                        snoozed: existing.snoozed,
+                    });
+                }
+            } else {
+                // 新任务
                 new_tasks.insert(task.id.clone(), TaskTimer {
-                    config: task,
+                    config: task.clone(),
                     reset_time: now,
                     triggered: false,
-                    disabled_at: None,
+                    disabled_at: if task.enabled { None } else { Some(now) },
                     snoozed: false,
                 });
-            } else if was_disabled && is_now_enabled {
-                // 从禁用变为启用，补偿禁用期间的时间
-                let mut new_reset_time = existing.reset_time;
-                if let Some(disabled_at) = existing.disabled_at {
-                    let disabled_duration = now.duration_since(disabled_at);
-                    new_reset_time += disabled_duration;
-                }
-                new_tasks.insert(task.id.clone(), TaskTimer {
-                    config: task,
-                    reset_time: new_reset_time,
-                    triggered: existing.triggered,
-                    disabled_at: None,
-                    snoozed: existing.snoozed,
-                });
-            } else if was_enabled && is_now_disabled {
-                // 从启用变为禁用，记录禁用时间点
-                new_tasks.insert(task.id.clone(), TaskTimer {
-                    config: task,
-                    reset_time: existing.reset_time,
-                    triggered: existing.triggered,
-                    disabled_at: Some(now),
-                    snoozed: existing.snoozed,
-                });
-            } else {
-                // 状态没变，保留
-                new_tasks.insert(task.id.clone(), TaskTimer {
-                    config: task,
-                    reset_time: existing.reset_time,
-                    triggered: existing.triggered,
-                    disabled_at: existing.disabled_at,
-                    snoozed: existing.snoozed,
-                });
             }
-        } else {
-            // 新任务
-            new_tasks.insert(task.id.clone(), TaskTimer {
-                config: task.clone(),
-                reset_time: now,
-                triggered: false,
-                disabled_at: if task.enabled { None } else { Some(now) },
-                snoozed: false,
-            });
         }
-    }
 
-    state.tasks = new_tasks;
+        state.tasks = new_tasks;
+    } // drop lock
+
+    rebuild_tray_menu(&app);
 }
 
 #[tauri::command]
@@ -549,11 +594,7 @@ fn start_timer_thread(app_handle: AppHandle) {
 
             let mut tasks_to_trigger: Vec<TaskTriggeredPayload> = Vec::new();
             let mut idle_status_changed = false;
-            let mut current_idle_status = IdleStatus {
-                is_idle: false,
-                idle_seconds: 0,
-                threshold: 300,
-            };
+            let current_idle_status;
 
             {
                 let mut state = get_timer_state().lock().unwrap();
@@ -916,23 +957,30 @@ pub fn run() {
                 .menu(&menu)
                 .tooltip("健康提醒助手")
                 .on_menu_event(|app, event| {
-                    match event.id.as_ref() {
-                        "quit" => {
-                            app.exit(0);
+                    let id_str = event.id.as_ref();
+                    if id_str == "quit" {
+                        app.exit(0);
+                    } else if id_str == "show" {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
                         }
-                        "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
+                    } else if id_str == "reset" {
+                        let _ = app.emit("reset-all-tasks", ());
+                    } else if id_str == "pause" {
+                        let _ = app.emit("toggle-pause", ());
+                    } else if id_str.starts_with("reset_task_") {
+                        let task_id = id_str.trim_start_matches("reset_task_");
+                        let mut state = get_timer_state().lock().unwrap();
+                        let now = Instant::now();
+                        if let Some(timer) = state.tasks.get_mut(task_id) {
+                            timer.reset_time = now;
+                            timer.triggered = false;
+                            timer.snoozed = false;
+                            if timer.disabled_at.is_some() {
+                                timer.disabled_at = Some(now);
                             }
                         }
-                        "reset" => {
-                            let _ = app.emit("reset-all-tasks", ());
-                        }
-                        "pause" => {
-                            let _ = app.emit("toggle-pause", ());
-                        }
-                        _ => {}
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
