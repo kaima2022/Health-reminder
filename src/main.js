@@ -406,13 +406,13 @@ async function startLockScreen(task) {
       task: {
         title: task.title,
         desc: task.desc,
-        duration: lockDuration,
+        duration: parseInt(lockDuration),
         icon: task.icon,
-        strict_mode: settings.strictMode,
-        allow_strict_snooze: settings.allowStrictSnooze,
-        max_snooze_count: settings.maxSnoozeCount,
-        snooze_minutes: task.snoozeMinutes || 5,
-        current_snooze_count: (snoozedStatus[task.id]?.count || 0)
+        strict_mode: !!settings.strictMode,
+        allow_strict_snooze: !!settings.allowStrictSnooze,
+        max_snooze_count: parseInt(settings.maxSnoozeCount),
+        snooze_minutes: parseInt(task.snoozeMinutes || 5),
+        current_snooze_count: parseInt(snoozedStatus[task.id]?.count || 0)
       }
     });
   } catch (e) {
@@ -1030,7 +1030,8 @@ function renderFullUI() {
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
           已完成休息
         </button>
-        ` : (settings.strictMode ? '' : `
+        ` : `
+        ${settings.strictMode ? '' : `
         <button class="unlock-btn" id="unlockBtn">
           <div class="unlock-progress"></div>
           <div class="unlock-text">
@@ -1038,19 +1039,24 @@ function renderFullUI() {
             长按 3 秒紧急解锁
           </div>
         </button>
+        `}
         ${(() => {
           const count = (lockScreenState.task && snoozedStatus[lockScreenState.task.id]) ? snoozedStatus[lockScreenState.task.id].count : 0;
           const isStrictRestricted = settings.strictMode && !settings.allowStrictSnooze;
-          if (count < settings.maxSnoozeCount && !isStrictRestricted) {
+          
+          if (count >= settings.maxSnoozeCount) {
+            return '<div style="color:rgba(255,255,255,0.5); font-size:0.8rem; margin-top:15px;">已达推迟上限</div>';
+          } else if (isStrictRestricted) {
+            return '<div style="color:rgba(255,255,255,0.5); font-size:0.8rem; margin-top:15px;">严格模式已禁用推迟</div>';
+          } else {
             return `
             <button id="lockSnoozeBtn" style="margin-top:15px; background:rgba(255,255,255,0.2); border:none; padding:8px 16px; border-radius:20px; color:white; font-size:14px; cursor:pointer;">
               💤 推迟 ${lockScreenState.task ? (lockScreenState.task.snoozeMinutes || 5) : 5} 分钟
             </button>
             `;
           }
-          return '';
         })()}
-        `)}
+        `}
       </div>
     </div>
 
