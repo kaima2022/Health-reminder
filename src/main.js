@@ -38,6 +38,7 @@ let settings = {
   resetOnIdle: true,   // 空闲时重置所有任务
   advancedSettingsOpen: false, // 高级设置展开状态
   maxSnoozeCount: 1,   // 最大推迟次数
+  allowStrictSnooze: false, // 严格模式下是否允许推迟
 };
 
 let countdowns = {};  // 现在由后端事件更新
@@ -906,6 +907,14 @@ function renderFullUI() {
 
         <div class="setting-row">
           <div class="setting-info">
+            <label>严格模式允许推迟</label>
+            <span class="setting-desc">开启后，即使在严格模式下也允许使用推迟功能</span>
+          </div>
+          <div class="toggle ${settings.allowStrictSnooze ? 'active' : ''}" id="allowStrictSnoozeToggle"></div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
             <label>空闲检测阈值</label>
             <span class="setting-desc">超过此时间无操作视为空闲${isIdle ? ' (当前空闲中)' : ''}</span>
           </div>
@@ -970,7 +979,8 @@ function renderFullUI() {
           <button class="btn btn-primary" id="dismissBtn">我知道了</button>
           ${(() => {
             const count = (activePopup && snoozedStatus[activePopup.id]) ? snoozedStatus[activePopup.id].count : 0;
-            if (count < settings.maxSnoozeCount) {
+            const isStrictRestricted = settings.strictMode && !settings.allowStrictSnooze;
+            if (count < settings.maxSnoozeCount && !isStrictRestricted) {
               return `<button class="btn btn-secondary" id="popupSnoozeBtn">推迟 ${activePopup ? (activePopup.snoozeMinutes || 5) : 5} 分钟</button>`;
             }
             return '';
@@ -1015,7 +1025,8 @@ function renderFullUI() {
         </button>
         ${(() => {
           const count = (lockScreenState.task && snoozedStatus[lockScreenState.task.id]) ? snoozedStatus[lockScreenState.task.id].count : 0;
-          if (count < settings.maxSnoozeCount) {
+          const isStrictRestricted = settings.strictMode && !settings.allowStrictSnooze;
+          if (count < settings.maxSnoozeCount && !isStrictRestricted) {
             return `
             <button id="lockSnoozeBtn" style="margin-top:15px; background:rgba(255,255,255,0.2); border:none; padding:8px 16px; border-radius:20px; color:white; font-size:14px; cursor:pointer;">
               💤 推迟 ${lockScreenState.task ? (lockScreenState.task.snoozeMinutes || 5) : 5} 分钟
@@ -1096,6 +1107,11 @@ function bindEvents() {
         el.classList.toggle('active', settings.resetOnIdle);
         saveSettings();
         syncTasksToBackend();
+      } else if (el.id === 'allowStrictSnoozeToggle') {
+        settings.allowStrictSnooze = !settings.allowStrictSnooze;
+        el.classList.toggle('active', settings.allowStrictSnooze);
+        saveSettings();
+        renderFullUI();
       }
     });
   });
