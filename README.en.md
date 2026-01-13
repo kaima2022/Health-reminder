@@ -153,6 +153,9 @@ npm run tauri build
 > #### Scoop update command
 > scoop update health-reminder
 
+### v1.5.5 (2026-01-13)
+- **macOS Fix**: Fixed an issue where clicking the Dock icon would not restore the main window.
+
 ### v1.5.4 (2026-01-10)
 - **Internationalization (i18n)**: Added Chinese/English language switching, quick toggle in the top-right corner
 - **Multi-language Tray Menu**: Tray right-click menu supports real-time language switching
