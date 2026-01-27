@@ -1057,6 +1057,17 @@ function renderFullUI() {
           <div class="toggle ${settings.resetOnIdle ? 'active' : ''}" id="resetOnIdleToggle"></div>
         </div>
 
+        <div class="setting-row" id="idleThresholdRow" style="display: ${settings.resetOnIdle ? 'flex' : 'none'};">
+          <div class="setting-info">
+            <label>${t('settings.idleThreshold')}</label>
+            <span class="setting-desc">${isIdle ? t('settings.idleThresholdDescIdle') : t('settings.idleThresholdDesc')}</span>
+          </div>
+          <div class="idle-threshold-input-group">
+            <input type="number" class="idle-threshold-input" id="idleThresholdInput" value="${Math.floor(settings.idleThreshold / 60)}" min="1" max="60">
+            <span class="input-unit">${t('time.minutes')}</span>
+          </div>
+        </div>
+
         <div class="setting-row">
           <div class="setting-info">
             <label>${t('settings.allowStrictSnooze')}</label>
@@ -1081,17 +1092,6 @@ function renderFullUI() {
           <div class="idle-threshold-input-group">
             <input type="number" class="idle-threshold-input" id="mergeThresholdInput" value="${settings.mergeThreshold}" min="5" max="300">
             <span class="input-unit">${t('time.seconds')}</span>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-info">
-            <label>${t('settings.idleThreshold')}</label>
-            <span class="setting-desc">${isIdle ? t('settings.idleThresholdDescIdle') : t('settings.idleThresholdDesc')}</span>
-          </div>
-          <div class="idle-threshold-input-group">
-            <input type="number" class="idle-threshold-input" id="idleThresholdInput" value="${Math.floor(settings.idleThreshold / 60)}" min="1" max="60">
-            <span class="input-unit">${t('time.minutes')}</span>
           </div>
         </div>
 
@@ -1282,6 +1282,11 @@ function bindEvents() {
       } else if (el.id === 'resetOnIdleToggle') {
         settings.resetOnIdle = !settings.resetOnIdle;
         el.classList.toggle('active', settings.resetOnIdle);
+        // 显示/隐藏空闲阈值设置
+        const idleThresholdRow = document.getElementById('idleThresholdRow');
+        if (idleThresholdRow) {
+          idleThresholdRow.style.display = settings.resetOnIdle ? 'flex' : 'none';
+        }
         saveSettings();
         syncTasksToBackend();
       } else if (el.id === 'allowStrictSnoozeToggle') {
