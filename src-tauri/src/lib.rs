@@ -655,6 +655,10 @@ fn timer_set_lock_screen_active(active: bool) {
             let lock_duration = lock_start.elapsed();
             for timer in state.tasks.values_mut() {
                 timer.reset_time += lock_duration;
+                // 如果任务被禁用，也需要同步更新 disabled_at，保持相对时间不变
+                if let Some(ref mut disabled_at) = timer.disabled_at {
+                    *disabled_at += lock_duration;
+                }
             }
         }
         state.lock_screen_active = false;
