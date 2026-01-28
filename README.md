@@ -1,12 +1,18 @@
-# 健康办公助手 (Health Reminder)
+<h1 align="center">健康办公助手 (Health Reminder)</h1>
 
-**中文** | [English](./README.en.md)
+<p align="center">
+  <strong>中文</strong> | <a href="./README.en.md">English</a>
+</p>
 
-> **极简、精准、高效。为现代办公族量身定制的健康守护小程序。**
+<p align="center">
+  <em>极简、精准、高效。为现代办公族量身定制的健康守护小程序。</em>
+</p>
 
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://tauri.app/)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.5.9-orange?style=flat-square)](https://github.com/)
+<p align="center">
+  <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.5.9-orange?style=flat-square" alt="Version"></a>
+</p>
 
 在快节奏的数字时代，健康的身体是高效生产力的基石。**健康办公助手** 是一款基于 Rust 与 Tauri 开发的高性能桌面应用，旨在通过智能化的任务排程与多维提醒，帮助你在专注工作的同时，科学地进行久坐、补水与用眼休息。
 

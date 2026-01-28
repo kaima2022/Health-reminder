@@ -1,12 +1,18 @@
-# Health Reminder
+<h1 align="center">Health Reminder</h1>
 
-[中文](./README.md) | **English**
+<p align="center">
+  <a href="./README.md">中文</a> | <strong>English</strong>
+</p>
 
-> **Minimalist, Precise, Efficient. A health guardian app tailored for modern office workers.**
+<p align="center">
+  <em>Minimalist, Precise, Efficient. A health guardian app tailored for modern office workers.</em>
+</p>
 
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://tauri.app/)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.5.9-orange?style=flat-square)](https://github.com/)
+<p align="center">
+  <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.5.9-orange?style=flat-square" alt="Version"></a>
+</p>
 
 In today's fast-paced digital era, a healthy body is the cornerstone of high productivity. **Health Reminder** is a high-performance desktop application built with Rust and Tauri, designed to help you take breaks from sitting, stay hydrated, and rest your eyes through intelligent task scheduling and multi-dimensional reminders.
 
