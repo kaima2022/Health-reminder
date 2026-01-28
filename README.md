@@ -7,6 +7,11 @@
 </p>
 
 <p align="center">
+  极简、精准、高效 — 为现代办公族量身定制的健康守护应用
+</p>
+
+
+<p align="center">
   <strong>中文</strong> | <a href="./README.en.md">English</a>
 </p>
 
