@@ -689,8 +689,118 @@ struct IdleStatus {
 
 fn start_timer_thread(app_handle: AppHandle) {
     thread::spawn(move || {
+        // Linux uses shorter interval for better lock screen enforcement
+        #[cfg(target_os = "linux")]
+        let base_interval = Duration::from_millis(200);
+        #[cfg(not(target_os = "linux"))]
+        let base_interval = Duration::from_secs(1);
+
+        let mut tick_counter: u32 = 0;
+
         loop {
-            thread::sleep(Duration::from_secs(1));
+            thread::sleep(base_interval);
+            tick_counter += 1;
+
+            // Check if we should run the full timer logic (every 1 second)
+            #[cfg(target_os = "linux")]
+            let should_run_timer_logic = tick_counter >= 5; // 200ms * 5 = 1 second
+            #[cfg(not(target_os = "linux"))]
+            let should_run_timer_logic = true;
+
+            // Always check lock screen watchdog on Linux (every 200ms)
+            // On other platforms, check every 1 second
+            let is_locked = get_timer_state().lock().unwrap().lock_screen_active;
+            if is_locked {
+                // 主窗口
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    if !window.is_visible().unwrap_or(false) { let _ = window.show(); }
+                    let _ = window.unminimize();
+                    if !window.is_focused().unwrap_or(false) { let _ = window.set_focus(); }
+                    let _ = window.set_always_on_top(true);
+
+                    // Linux-specific: Additional focus enforcement for both X11 and Wayland
+                    #[cfg(target_os = "linux")]
+                    {
+                        let _ = window.set_focus();
+                        // Try to grab keyboard focus more aggressively
+                        let _ = window.set_always_on_top(true);
+                    }
+                }
+
+                let lock_state = app_handle.state::<LockState>();
+                let mut guard = lock_state.0.lock().unwrap();
+                let windows = guard.windows.clone();
+                let args = guard.args.clone();
+
+                for label in &windows {
+                    if let Some(window) = app_handle.get_webview_window(label) {
+                        if !window.is_visible().unwrap_or(false) { let _ = window.show(); }
+                        if !window.is_focused().unwrap_or(false) { let _ = window.set_focus(); }
+                        let _ = window.set_always_on_top(true);
+
+                        // Linux-specific: Additional focus and fullscreen enforcement
+                        // Works for both X11 and Wayland (Tauri abstracts the differences)
+                        #[cfg(target_os = "linux")]
+                        {
+                            let _ = window.set_fullscreen(true);
+                            let _ = window.set_focus();
+                            let _ = window.set_always_on_top(true);
+                        }
+                    }
+                }
+
+                // Self-Healing (only run every 1 second to avoid performance issues)
+                if should_run_timer_logic {
+                    if let Ok(monitors) = app_handle.available_monitors() {
+                        let mut covered_indices = HashSet::new();
+
+                        if let Some(main_win) = app_handle.get_webview_window("main") {
+                            if let Ok(pos) = main_win.outer_position() {
+                                for (i, m) in monitors.iter().enumerate() {
+                                    if m.position().x == pos.x && m.position().y == pos.y {
+                                        covered_indices.insert(i);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        for label in &windows {
+                            if let Some(slave) = app_handle.get_webview_window(label) {
+                                if let Ok(pos) = slave.outer_position() {
+                                    for (i, m) in monitors.iter().enumerate() {
+                                        if m.position().x == pos.x && m.position().y == pos.y {
+                                            covered_indices.insert(i);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        for (i, m) in monitors.iter().enumerate() {
+                            if !covered_indices.contains(&i) {
+                                let label = format!("lock-slave-{}", i);
+                                if let Some(win) = app_handle.get_webview_window(&label) {
+                                    let _ = win.set_position(m.position().clone());
+                                    let _ = win.set_size(tauri::Size::Physical(m.size().clone()));
+                                    let _ = win.set_fullscreen(true);
+                                } else {
+                                    if let Some(new_label) = create_slave_window(&app_handle, m, args.as_ref(), i) {
+                                        guard.windows.push(new_label);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Reset counter and run timer logic
+            if should_run_timer_logic {
+                tick_counter = 0;
+            } else {
+                continue; // Skip the rest of the loop on Linux intermediate ticks
+            }
 
             let mut tasks_to_trigger: Vec<TaskTriggeredPayload> = Vec::new();
             let mut idle_status_changed = false;
@@ -788,88 +898,6 @@ fn start_timer_thread(app_handle: AppHandle) {
             // 发送倒计时更新
             let countdowns = get_countdowns();
             let _ = app_handle.emit("countdown-update", countdowns);
-
-            // ============= 锁屏看门狗 (Watchdog) =============
-            // 确保锁屏窗口始终置顶且聚焦，防止被最小化
-            let is_locked = get_timer_state().lock().unwrap().lock_screen_active;
-            if is_locked {
-                // 主窗口
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    if !window.is_visible().unwrap_or(false) { let _ = window.show(); }
-                    let _ = window.unminimize();
-                    if !window.is_focused().unwrap_or(false) { let _ = window.set_focus(); }
-                    let _ = window.set_always_on_top(true);
-                    
-                    // Linux-specific: Additional focus enforcement
-                    #[cfg(target_os = "linux")]
-                    {
-                        let _ = window.set_focus();
-                    }
-                }
-
-                let lock_state = app_handle.state::<LockState>();
-                let mut guard = lock_state.0.lock().unwrap();
-                let windows = guard.windows.clone();
-                let args = guard.args.clone();
-
-                for label in &windows {
-                    if let Some(window) = app_handle.get_webview_window(label) {
-                        if !window.is_visible().unwrap_or(false) { let _ = window.show(); }
-                        if !window.is_focused().unwrap_or(false) { let _ = window.set_focus(); }
-                        let _ = window.set_always_on_top(true);
-                        
-                        // Linux-specific: Additional focus and fullscreen enforcement
-                        #[cfg(target_os = "linux")]
-                        {
-                            let _ = window.set_fullscreen(true);
-                            let _ = window.set_focus();
-                        }
-                    }
-                }
-
-                // Self-Healing
-                if let Ok(monitors) = app_handle.available_monitors() {
-                    let mut covered_indices = HashSet::new();
-                    
-                    if let Some(main_win) = app_handle.get_webview_window("main") {
-                        if let Ok(pos) = main_win.outer_position() {
-                            for (i, m) in monitors.iter().enumerate() {
-                                if m.position().x == pos.x && m.position().y == pos.y {
-                                    covered_indices.insert(i);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    for label in &windows {
-                        if let Some(slave) = app_handle.get_webview_window(label) {
-                            if let Ok(pos) = slave.outer_position() {
-                                for (i, m) in monitors.iter().enumerate() {
-                                    if m.position().x == pos.x && m.position().y == pos.y {
-                                        covered_indices.insert(i);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    for (i, m) in monitors.iter().enumerate() {
-                        if !covered_indices.contains(&i) {
-                            let label = format!("lock-slave-{}", i);
-                            if let Some(win) = app_handle.get_webview_window(&label) {
-                                let _ = win.set_position(m.position().clone());
-                                let _ = win.set_size(tauri::Size::Physical(m.size().clone()));
-                                let _ = win.set_fullscreen(true);
-                            } else {
-                                if let Some(new_label) = create_slave_window(&app_handle, m, args.as_ref(), i) {
-                                    guard.windows.push(new_label);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     });
 }
