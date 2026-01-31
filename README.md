@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.5.9-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.6.0-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -61,6 +61,9 @@
   <img src="./docs/screenshots/空闲监测.png" alt="Dashboard" width="30%">
 </p>
 
+### 自定义锁屏图片
+
+![自定义锁屏图片](./docs/screenshots/自定义锁屏图片.png)
 
 
 ### 设置界面（简洁&高级设置）
@@ -167,6 +170,12 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.6.0 (2026-01-31)
+- **自定义锁屏背景**：新增锁屏背景图片自定义功能，可在设置中选择本地图片作为锁屏背景。
+- **多屏背景同步**：副屏锁屏现在也会显示自定义背景图片，与主屏保持一致。
+- **Linux 多屏锁定增强**：优化 Linux 平台多屏锁定机制，看门狗检测频率提升至 200ms，增强 X11/Wayland 兼容性。
+- **修复**：修复 Tauri v2 对话框插件返回值导致图片路径无法正确保存的问题。
 
 ### v1.5.9 (2026-01-27)
 - **空闲重置通知横幅**：新增空闲检测横幅通知，当检测到用户空闲并重置任务时，显示美观的紫色通知横幅，点击"知道了"关闭。

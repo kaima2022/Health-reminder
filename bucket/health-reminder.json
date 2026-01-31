@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/ScoopInstaller/Scoop/master/schema.json",
-  "version": "1.5.9",
+  "version": "1.6.0",
   "description": "Health Reminder - A minimalist, precise and efficient health guardian app.",
   "homepage": "https://github.com/kaima2022/desk-reminder",
   "license": "MIT",

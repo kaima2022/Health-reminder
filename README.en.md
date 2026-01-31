@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.5.9-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.6.0-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -60,6 +60,10 @@ In today's fast-paced digital era, a healthy body is the cornerstone of high pro
 <p align="center">
   <img src="./docs/screenshots/空闲监测.png" alt="Dashboard" width="30%">
 </p>
+
+### Custom Lock Screen Background
+
+![Custom Lock Screen Background](./docs/screenshots/自定义锁屏图片.png)
 
 ### Settings Interface (Simple & Advanced Settings)
 
@@ -165,6 +169,12 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.6.0 (2026-01-31)
+- **Custom Lock Screen Background**: Added lock screen background customization feature. Select a local image as your lock screen background in settings.
+- **Multi-screen Background Sync**: Secondary screen lock screens now display the custom background image, consistent with the main screen.
+- **Linux Multi-monitor Lock Enhancement**: Optimized Linux multi-monitor lock mechanism with 200ms watchdog detection frequency, improved X11/Wayland compatibility.
+- **Fix**: Fixed Tauri v2 dialog plugin return value causing image path to not save correctly.
 
 ### v1.5.9 (2026-01-27)
 - **Idle Reset Notification Banner**: Added a beautiful purple notification banner that appears when idle is detected and tasks are reset. Click "Got It" to dismiss.
