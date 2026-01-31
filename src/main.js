@@ -1192,7 +1192,7 @@ function renderFullUI() {
       </div>
     </div>
 
-    <div class="lock-screen ${lockScreenState.active ? 'show' : ''}" style="${settings.lockScreenBgImage ? `background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('${convertFileSrc(settings.lockScreenBgImage)}'); background-size: cover; background-position: center;` : ''}">
+    <div class="lock-screen ${lockScreenState.active ? 'show' : ''}" style="${settings.lockScreenBgImage && settings.lockScreenBgImage.trim() !== '' ? `background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('${convertFileSrc(settings.lockScreenBgImage)}'); background-size: cover; background-position: center;` : ''}">
       <div class="lock-screen-content">
         <div class="lock-timer-ring">
           <svg width="200" height="200" viewBox="0 0 200 200">

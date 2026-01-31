@@ -798,10 +798,9 @@ fn start_timer_thread(app_handle: AppHandle) {
                     if !window.is_focused().unwrap_or(false) { let _ = window.set_focus(); }
                     let _ = window.set_always_on_top(true);
                     
-                    // Linux-specific: More aggressive focus enforcement
+                    // Linux-specific: Additional focus enforcement
                     #[cfg(target_os = "linux")]
                     {
-                        let _ = window.set_always_on_top(true);
                         let _ = window.set_focus();
                     }
                 }
@@ -817,10 +816,9 @@ fn start_timer_thread(app_handle: AppHandle) {
                         if !window.is_focused().unwrap_or(false) { let _ = window.set_focus(); }
                         let _ = window.set_always_on_top(true);
                         
-                        // Linux-specific: More aggressive focus and position enforcement
+                        // Linux-specific: Additional focus and fullscreen enforcement
                         #[cfg(target_os = "linux")]
                         {
-                            let _ = window.set_always_on_top(true);
                             let _ = window.set_fullscreen(true);
                             let _ = window.set_focus();
                         }
