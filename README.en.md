@@ -27,7 +27,7 @@ In today's fast-paced digital era, a healthy body is the cornerstone of high pro
 ### Main Interface (Dashboard) & Custom Task Scheduling (Tasks)
 
 <p align="center">
-  <img src="./docs/screenshots/展示1.png" alt="Dashboard" width="30%">
+  <img src="./docs/screenshots/展示1-en.png" alt="Dashboard" width="30%">
 
   <img src="./docs/screenshots/展示2.png" alt="Tasks" width="30%">
 
