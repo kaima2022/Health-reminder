@@ -105,6 +105,8 @@ export default {
     language: 'Language',
     customBgImage: 'Custom Lock Screen Background',
     customBgImageDesc: 'Select an image for the lock screen background',
+    theme: 'Theme',
+    themeDesc: 'Switch light/dark mode',
   },
 
   // Task card

@@ -47,6 +47,7 @@ let settings = {
   mergeThreshold: 60,  // 合并阈值（秒）
   language: 'zh-CN',   // 界面语言
   lockScreenBgImage: '',  // 锁屏背景图片路径
+  theme: 'light',      // 主题设置
 };
 
 let countdowns = {};  // 现在由后端事件更新
@@ -97,6 +98,7 @@ async function syncTasksToBackend() {
 }
 
 async function init() {
+  applyTheme(settings.theme); // 在加载设置后立即应用主题
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('mode') === 'lock_slave') {
     const task = {
@@ -149,6 +151,7 @@ async function init() {
   }
 
   await loadSettings();
+  applyTheme(settings.theme); // 确保在加载设置后立即应用主题
 
   // 初始化语言设置
   if (settings.language) {
@@ -158,6 +161,7 @@ async function init() {
     settings.language = detectLocale();
     setLocale(settings.language);
   }
+
   // 通知后端更新托盘菜单语言（确保启动时托盘菜单语言与界面一致）
   invoke('update_tray_language', { language: settings.language }).catch(() => {});
 
@@ -396,6 +400,11 @@ function saveStats() {
     stats: stats,
   }));
 }
+
+function applyTheme(theme) {
+  document.body.dataset.theme = theme;
+}
+
 
 // tick 函数已移至 Rust 后端，不再需要前端定时器
 
@@ -1045,6 +1054,13 @@ function renderFullUI() {
         </div>
         <div class="toggle ${settings.strictMode ? 'active' : ''}" id="strictModeToggle"></div>
       </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <label>${t('settings.theme')}</label>
+          <span class="setting-desc">${t('settings.themeDesc')}</span>
+        </div>
+        <div class="toggle ${settings.theme === 'dark' ? 'active' : ''}" id="themeToggle"></div>
+      </div>
 
       <div class="setting-row" id="advancedToggle" style="cursor:pointer; opacity:0.7;">
         <div style="display:flex; align-items:center; gap:8px;">
@@ -1345,6 +1361,11 @@ function bindEvents() {
         el.classList.toggle('active', settings.enableMerge);
         saveSettings();
         renderFullUI();
+      } else if (el.id === 'themeToggle') {
+        settings.theme = settings.theme === 'light' ? 'dark' : 'light';
+        el.classList.toggle('active', settings.theme === 'dark');
+        applyTheme(settings.theme);
+        saveSettings();
       }
     });
   });

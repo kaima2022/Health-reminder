@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::collections::{HashMap, HashSet};
 use std::thread;
 use tauri::{
@@ -210,6 +210,7 @@ struct TimerState {
     idle_threshold_seconds: u64,  // 空闲阈值（秒），默认 300 秒 = 5 分钟
     is_idle: bool,  // 当前是否处于空闲状态
     idle_start: Option<Instant>,  // 进入空闲状态的时间点
+    idle_start_timestamp: Option<i64>,  // Unix 时间戳（毫秒）
 }
 
 impl TimerState {
@@ -224,6 +225,7 @@ impl TimerState {
             idle_threshold_seconds: 300,  // 默认 5 分钟
             is_idle: false,
             idle_start: None,
+            idle_start_timestamp: None,
         }
     }
 }
@@ -685,6 +687,7 @@ struct IdleStatus {
     is_idle: bool,
     idle_seconds: u64,
     threshold: u64,
+    idle_start_timestamp: Option<i64>,  // 空闲开始时间戳
 }
 
 fn start_timer_thread(app_handle: AppHandle) {
@@ -833,6 +836,11 @@ fn start_timer_thread(app_handle: AppHandle) {
                     // 刚进入空闲状态
                     state.is_idle = true;
                     state.idle_start = Some(now);
+                    let timestamp = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis() as i64;
+                    state.idle_start_timestamp = Some(timestamp);
                     idle_status_changed = true;
 
                     // 重置所有勾选了「空闲重置」的任务
@@ -855,6 +863,7 @@ fn start_timer_thread(app_handle: AppHandle) {
                     }
 
                     state.idle_start = None;
+                    state.idle_start_timestamp = None;
                     idle_status_changed = true;
                 }
 
@@ -862,6 +871,7 @@ fn start_timer_thread(app_handle: AppHandle) {
                     is_idle: state.is_idle,
                     idle_seconds,
                     threshold,
+                    idle_start_timestamp: state.idle_start_timestamp,
                 };
 
                 // 如果处于空闲状态，不检查任务触发（计时暂停）

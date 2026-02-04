@@ -105,6 +105,8 @@ export default {
     language: '语言',
     customBgImage: '自定义锁屏背景',
     customBgImageDesc: '选择一张图片作为锁屏背景',
+    theme: '主题',
+    themeDesc: '切换亮色/暗色模式',
   },
 
   // 任务卡片

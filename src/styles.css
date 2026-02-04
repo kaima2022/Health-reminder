@@ -19,6 +19,22 @@
   --shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
+[data-theme="dark"] {
+  --primary: #0a84ff;
+  --primary-dark: #0066cc;
+  --success: #30d158;
+  --warning: #ff9f0a;
+  --danger: #ff453a;
+  --bg: #1c1c1e;
+  --bg-card: #2c2c2e;
+  --bg-hover: #3a3a3c;
+  --text: #ffffff;
+  --text-muted: #8e8e93;
+  --border: #38383a;
+  --shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "San Francisco", "Helvetica Neue", "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", sans-serif;
   background: var(--bg);
