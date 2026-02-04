@@ -6,7 +6,7 @@ export default {
   app: {
     title: 'Health Reminder',
     subtitle: 'Care for your health, one reminder at a time',
-    footer: 'Health Reminder v1.6.0 · Wishing you good health every day',
+    footer: 'Health Reminder v1.6.1 · Wishing you good health every day',
     trayTooltip: 'Health Reminder',
   },
 
@@ -100,8 +100,8 @@ export default {
     sound: 'Notification Sound',
     autoStart: 'Start on Boot',
     version: 'Version Update',
-    currentVersion: 'Current version v1.6.0',
-    newVersion: 'Current version v1.6.0 (New version v{version} available)',
+    currentVersion: 'Current version v1.6.1',
+    newVersion: 'Current version v1.6.1 (New version v{version} available)',
     language: 'Language',
     customBgImage: 'Custom Lock Screen Background',
     customBgImageDesc: 'Select an image for the lock screen background',

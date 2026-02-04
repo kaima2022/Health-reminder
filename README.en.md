@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.6.0-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.6.1-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -169,6 +169,11 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.6.1 (2026-02-04)
+- **Dark theme palette**: Improved dark theme colors and contrast for better night use.
+- **Logo white border removed**: Cleaned up icon edges (including iOS AppIcon).
+- **Idle banner shows time**: Idle banner now displays idle duration.
 
 ### v1.6.0 (2026-01-31)
 - **Custom Lock Screen Background**: Added lock screen background customization feature. Select a local image as your lock screen background in settings.

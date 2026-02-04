@@ -6,7 +6,7 @@ export default {
   app: {
     title: '健康提醒助手',
     subtitle: '关爱健康，从每一次提醒开始',
-    footer: '健康办公助手 v1.6.0 · 愿你每天都有好身体',
+    footer: '健康办公助手 v1.6.1 · 愿你每天都有好身体',
     trayTooltip: '健康提醒助手',
   },
 
@@ -100,8 +100,8 @@ export default {
     sound: '提示音',
     autoStart: '开机自启动',
     version: '版本更新',
-    currentVersion: '当前版本 v1.6.0',
-    newVersion: '当前版本 v1.6.0（有新版本 v{version}）',
+    currentVersion: '当前版本 v1.6.1',
+    newVersion: '当前版本 v1.6.1（有新版本 v{version}）',
     language: '语言',
     customBgImage: '自定义锁屏背景',
     customBgImageDesc: '选择一张图片作为锁屏背景',
