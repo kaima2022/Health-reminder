@@ -32,6 +32,7 @@ const DEFAULT_TASKS = [
 let settings = {
   tasks: [...DEFAULT_TASKS],
   soundEnabled: true,
+  customSoundPath: '',  // 自定义提示音路径
   autoStart: false,
   lockScreenEnabled: false,
   lockDuration: 20,
@@ -220,7 +221,7 @@ async function init() {
       if (info.enabled && !isIdle && !isPaused && preNotifyTime > 0 && info.remaining === preNotifyTime) {
         if (task) {
            if (settings.soundEnabled) {
-             invoke('play_notification_sound').catch(() => {});
+             invoke('play_notification_sound', { customSoundPath: settings.customSoundPath || null }).catch(() => {});
            }
            invoke('show_notification', {
              title: t('notification.preNotifyTitle', { title: getTaskDisplayTitle(task) }),
@@ -410,7 +411,7 @@ function applyTheme(theme) {
 
 async function triggerNotification(task) {
   if (settings.soundEnabled) {
-    invoke('play_notification_sound').catch(() => {});
+    invoke('play_notification_sound', { customSoundPath: settings.customSoundPath || null }).catch(() => {});
   }
   
   // 计算合并的任务
@@ -1144,6 +1145,19 @@ function renderFullUI() {
           </div>
         </div>
 
+        <div class="setting-row" style="${settings.soundEnabled ? '' : 'display:none;'}" id="customSoundRow">
+          <div class="setting-info">
+            <label>${t('settings.customSound')}</label>
+            <span class="setting-desc">${t('settings.customSoundDesc')}</span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button class="preset-btn" id="selectCustomSoundBtn" style="padding:6px 12px;">
+              ${settings.customSoundPath ? t('buttons.changeSound') : t('buttons.selectSound')}
+            </button>
+            ${settings.customSoundPath ? `<button class="preset-btn" id="clearCustomSoundBtn" style="padding:6px 12px;">${t('buttons.clearSound')}</button>` : ''}
+          </div>
+        </div>
+
         <div class="setting-row">
           <label>${t('settings.autoStart')}</label>
           <div class="toggle ${settings.autoStart ? 'active' : ''}" id="startToggle"></div>
@@ -1313,6 +1327,11 @@ function bindEvents() {
       } else if (el.id === 'soundToggle') {
         settings.soundEnabled = !settings.soundEnabled;
         el.classList.toggle('active', settings.soundEnabled);
+        // Toggle custom sound row visibility
+        const customSoundRow = document.getElementById('customSoundRow');
+        if (customSoundRow) {
+          customSoundRow.style.display = settings.soundEnabled ? '' : 'none';
+        }
         saveSettings();
       } else if (el.id === 'startToggle') {
         try {
@@ -1509,8 +1528,44 @@ function bindEvents() {
   }
   
   document.getElementById('testSoundBtn').onclick = () => {
-    invoke('play_notification_sound').catch(e => console.error('Sound invoke failed:', e));
+    if (settings.customSoundPath) {
+      invoke('test_custom_sound', { filePath: settings.customSoundPath })
+        .catch(err => console.error('Failed to test custom sound:', err));
+    } else {
+      invoke('play_notification_sound', { customSoundPath: null }).catch(e => console.error('Sound invoke failed:', e));
+    }
   };
+  
+  // 选择自定义提示音
+  const selectCustomSoundBtn = document.getElementById('selectCustomSoundBtn');
+  if (selectCustomSoundBtn) {
+    selectCustomSoundBtn.onclick = async () => {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        filters: [{
+          name: 'Audio',
+          extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'wma']
+        }]
+      });
+      
+      if (selected && !Array.isArray(selected)) {
+        settings.customSoundPath = selected;
+        saveSettings();
+        render();
+      }
+    };
+  }
+  
+  // 清除自定义提示音
+  const clearCustomSoundBtn = document.getElementById('clearCustomSoundBtn');
+  if (clearCustomSoundBtn) {
+    clearCustomSoundBtn.onclick = () => {
+      settings.customSoundPath = '';
+      saveSettings();
+      render();
+    };
+  }
 
   const unlockBtn = document.getElementById('unlockBtn');
   if (unlockBtn) {

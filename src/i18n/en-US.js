@@ -60,6 +60,9 @@ export default {
     selectBg: 'Select Image',
     changeBg: 'Change Image',
     clear: 'Clear',
+    selectSound: 'Select Audio',
+    changeSound: 'Change Audio',
+    clearSound: 'Use Default',
   },
 
   // Lock screen
@@ -98,6 +101,9 @@ export default {
     maxSnoozeCount: 'Max Snooze Count',
     maxSnoozeCountDesc: 'Maximum consecutive snoozes allowed after task triggers',
     sound: 'Notification Sound',
+    soundDesc: 'Play sound when reminders trigger',
+    customSound: 'Custom Sound',
+    customSoundDesc: 'Select a custom audio file as notification sound (supports MP3, WAV, OGG, FLAC, etc.)',
     autoStart: 'Start on Boot',
     version: 'Version Update',
     currentVersion: 'Current version v1.6.2',

@@ -12,6 +12,7 @@ use tauri::{
 };
 use tauri_plugin_notification::NotificationExt;
 use url::form_urlencoded;
+use std::io::BufReader;
 
 // ============= 跨平台空闲检测 =============
 
@@ -940,8 +941,52 @@ fn save_settings(settings: String) -> Result<(), String> {
     fs::write(path, settings).map_err(|e| e.to_string())
 }
 
+/// 播放自定义音频文件
+fn play_custom_audio_file(file_path: &str) -> Result<(), String> {
+    use std::fs::File;
+    use rodio::{Decoder, OutputStream, Sink};
+    
+    // 创建音频输出流
+    let (_stream, stream_handle) = OutputStream::try_default()
+        .map_err(|e| format!("Failed to create audio output stream: {}", e))?;
+    
+    // 创建音频播放器
+    let sink = Sink::try_new(&stream_handle)
+        .map_err(|e| format!("Failed to create audio sink: {}", e))?;
+    
+    // 打开音频文件
+    let file = File::open(file_path)
+        .map_err(|e| format!("Failed to open audio file: {}", e))?;
+    
+    // 解码音频文件
+    let source = Decoder::new(BufReader::new(file))
+        .map_err(|e| format!("Failed to decode audio file: {}", e))?;
+    
+    // 播放音频
+    sink.append(source);
+    sink.sleep_until_end();
+    
+    Ok(())
+}
+
+/// 在新线程中播放自定义音频，避免阻塞主线程
+fn play_custom_audio_async(file_path: String) {
+    thread::spawn(move || {
+        let _ = play_custom_audio_file(&file_path);
+    });
+}
+
 #[tauri::command]
-fn play_notification_sound() {
+fn play_notification_sound(custom_sound_path: Option<String>) {
+    // 如果设置了自定义提示音，则使用自定义音频
+    if let Some(path) = custom_sound_path {
+        if !path.is_empty() && std::path::Path::new(&path).exists() {
+            play_custom_audio_async(path);
+            return;
+        }
+    }
+    
+    // 否则使用系统默认提示音
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
@@ -995,6 +1040,20 @@ fn show_notification(app: tauri::AppHandle, title: String, body: String) {
         .body(body)
         .show()
         .unwrap();
+}
+
+#[tauri::command]
+fn test_custom_sound(file_path: String) -> Result<(), String> {
+    if file_path.is_empty() {
+        return Err("No sound file selected".to_string());
+    }
+    
+    if !std::path::Path::new(&file_path).exists() {
+        return Err("Sound file does not exist".to_string());
+    }
+    
+    play_custom_audio_async(file_path);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1180,6 +1239,7 @@ pub fn run() {
             load_settings,
             save_settings,
             play_notification_sound,
+            test_custom_sound,
             show_notification,
             show_main_window,
             hide_main_window,
