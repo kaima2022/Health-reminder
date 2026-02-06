@@ -12,6 +12,7 @@ use tauri::{
 };
 use tauri_plugin_notification::NotificationExt;
 use url::form_urlencoded;
+use std::io::BufReader;
 
 // ============= 跨平台空闲检测 =============
 
@@ -940,8 +941,56 @@ fn save_settings(settings: String) -> Result<(), String> {
     fs::write(path, settings).map_err(|e| e.to_string())
 }
 
+/// Play custom audio file
+fn play_custom_audio_file(file_path: &str) -> Result<(), String> {
+    use std::fs::File;
+    use rodio::{Decoder, OutputStream, Sink};
+    
+    // 创建音频输出流
+    let (_stream, stream_handle) = OutputStream::try_default()
+        .map_err(|e| format!("Failed to create audio output stream: {}", e))?;
+    
+    // 创建音频播放器
+    let sink = Sink::try_new(&stream_handle)
+        .map_err(|e| format!("Failed to create audio sink: {}", e))?;
+    
+    // 打开音频文件
+    let file = File::open(file_path)
+        .map_err(|e| format!("Failed to open audio file: {}", e))?;
+    
+    // 解码音频文件
+    let source = Decoder::new(BufReader::new(file))
+        .map_err(|e| format!("Failed to decode audio file: {}", e))?;
+    
+    // Play audio
+    sink.append(source);
+    
+    // Wait for playback to complete, ensuring _stream stays alive during playback
+    sink.sleep_until_end();
+    
+    // _stream and sink will be dropped here after playback is complete
+    
+    Ok(())
+}
+
+/// Play custom audio in a new thread to avoid blocking the main thread
+fn play_custom_audio_async(file_path: String) {
+    thread::spawn(move || {
+        let _ = play_custom_audio_file(&file_path);
+    });
+}
+
 #[tauri::command]
-fn play_notification_sound() {
+fn play_notification_sound(custom_sound_path: Option<String>) {
+    // If custom notification sound is set, use the custom audio
+    if let Some(path) = custom_sound_path {
+        if !path.is_empty() && std::path::Path::new(&path).exists() {
+            play_custom_audio_async(path);
+            return;
+        }
+    }
+    
+    // Otherwise, use system default notification sound
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
@@ -995,6 +1044,20 @@ fn show_notification(app: tauri::AppHandle, title: String, body: String) {
         .body(body)
         .show()
         .unwrap();
+}
+
+#[tauri::command]
+fn test_custom_sound(file_path: String) -> Result<(), String> {
+    if file_path.is_empty() {
+        return Err("No sound file selected".to_string());
+    }
+    
+    if !std::path::Path::new(&file_path).exists() {
+        return Err("Sound file does not exist".to_string());
+    }
+    
+    play_custom_audio_async(file_path);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1180,6 +1243,7 @@ pub fn run() {
             load_settings,
             save_settings,
             play_notification_sound,
+            test_custom_sound,
             show_notification,
             show_main_window,
             hide_main_window,

@@ -60,6 +60,9 @@ export default {
     selectBg: '选择图片',
     changeBg: '更换图片',
     clear: '清除',
+    selectSound: '选择音频',
+    changeSound: '更换音频',
+    clearSound: '使用默认',
   },
 
   // 锁屏
@@ -98,6 +101,9 @@ export default {
     maxSnoozeCount: '最大推迟次数',
     maxSnoozeCountDesc: '任务触发后允许连续推迟的次数',
     sound: '提示音',
+    soundDesc: '提醒时播放提示音',
+    customSound: '自定义提示音',
+    customSoundDesc: '选择自定义音频文件作为提示音（支持 MP3, WAV, OGG, FLAC 等格式）',
     autoStart: '开机自启动',
     version: '版本更新',
     currentVersion: '当前版本 v1.6.2',
