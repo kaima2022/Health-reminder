@@ -1157,6 +1157,13 @@ function renderFullUI() {
             ${settings.customSoundPath ? `<button class="preset-btn" id="clearCustomSoundBtn" style="padding:6px 12px;">${t('buttons.clearSound')}</button>` : ''}
           </div>
         </div>
+        ${settings.customSoundPath ? `
+        <div class="setting-row" style="padding-left:20px; ${settings.soundEnabled ? '' : 'display:none;'}">
+          <div class="setting-info">
+            <span class="setting-desc" style="font-size:0.75rem; word-break:break-all;">${settings.customSoundPath}</span>
+          </div>
+        </div>
+        ` : ''}
 
         <div class="setting-row">
           <label>${t('settings.autoStart')}</label>
@@ -1326,13 +1333,8 @@ function bindEvents() {
         }
       } else if (el.id === 'soundToggle') {
         settings.soundEnabled = !settings.soundEnabled;
-        el.classList.toggle('active', settings.soundEnabled);
-        // Toggle custom sound row visibility
-        const customSoundRow = document.getElementById('customSoundRow');
-        if (customSoundRow) {
-          customSoundRow.style.display = settings.soundEnabled ? '' : 'none';
-        }
         saveSettings();
+        render(); // Re-render to update visibility of all sound-related elements
       } else if (el.id === 'startToggle') {
         try {
           const newState = !settings.autoStart;

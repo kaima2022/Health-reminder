@@ -964,7 +964,11 @@ fn play_custom_audio_file(file_path: &str) -> Result<(), String> {
     
     // 播放音频
     sink.append(source);
+    
+    // 等待播放完成，确保 _stream 在播放期间保持活动状态
     sink.sleep_until_end();
+    
+    // _stream 和 sink 将在此处被释放，此时播放已完成
     
     Ok(())
 }
