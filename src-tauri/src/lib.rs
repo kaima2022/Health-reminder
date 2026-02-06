@@ -941,7 +941,7 @@ fn save_settings(settings: String) -> Result<(), String> {
     fs::write(path, settings).map_err(|e| e.to_string())
 }
 
-/// 播放自定义音频文件
+/// Play custom audio file
 fn play_custom_audio_file(file_path: &str) -> Result<(), String> {
     use std::fs::File;
     use rodio::{Decoder, OutputStream, Sink};
@@ -962,18 +962,18 @@ fn play_custom_audio_file(file_path: &str) -> Result<(), String> {
     let source = Decoder::new(BufReader::new(file))
         .map_err(|e| format!("Failed to decode audio file: {}", e))?;
     
-    // 播放音频
+    // Play audio
     sink.append(source);
     
-    // 等待播放完成，确保 _stream 在播放期间保持活动状态
+    // Wait for playback to complete, ensuring _stream stays alive during playback
     sink.sleep_until_end();
     
-    // _stream 和 sink 将在此处被释放，此时播放已完成
+    // _stream and sink will be dropped here after playback is complete
     
     Ok(())
 }
 
-/// 在新线程中播放自定义音频，避免阻塞主线程
+/// Play custom audio in a new thread to avoid blocking the main thread
 fn play_custom_audio_async(file_path: String) {
     thread::spawn(move || {
         let _ = play_custom_audio_file(&file_path);
@@ -982,7 +982,7 @@ fn play_custom_audio_async(file_path: String) {
 
 #[tauri::command]
 fn play_notification_sound(custom_sound_path: Option<String>) {
-    // 如果设置了自定义提示音，则使用自定义音频
+    // If custom notification sound is set, use the custom audio
     if let Some(path) = custom_sound_path {
         if !path.is_empty() && std::path::Path::new(&path).exists() {
             play_custom_audio_async(path);
@@ -990,7 +990,7 @@ fn play_notification_sound(custom_sound_path: Option<String>) {
         }
     }
     
-    // 否则使用系统默认提示音
+    // Otherwise use system default notification sound
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;

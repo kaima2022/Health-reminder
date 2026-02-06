@@ -1333,8 +1333,20 @@ function bindEvents() {
         }
       } else if (el.id === 'soundToggle') {
         settings.soundEnabled = !settings.soundEnabled;
+        el.classList.toggle('active', settings.soundEnabled);
+        // Show/hide custom sound settings
+        const customSoundRow = document.getElementById('customSoundRow');
+        if (customSoundRow) {
+          customSoundRow.style.display = settings.soundEnabled ? '' : 'none';
+        }
+        // Show/hide custom sound path display if it exists
+        if (settings.customSoundPath) {
+          const soundPathRow = customSoundRow?.nextElementSibling;
+          if (soundPathRow && soundPathRow.querySelector('.setting-desc')?.textContent.includes(settings.customSoundPath)) {
+            soundPathRow.style.display = settings.soundEnabled ? '' : 'none';
+          }
+        }
         saveSettings();
-        render(); // Re-render to update visibility of all sound-related elements
       } else if (el.id === 'startToggle') {
         try {
           const newState = !settings.autoStart;
