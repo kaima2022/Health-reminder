@@ -990,7 +990,7 @@ fn play_notification_sound(custom_sound_path: Option<String>) {
         }
     }
     
-    // Otherwise use system default notification sound
+    // Otherwise, use system default notification sound
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
