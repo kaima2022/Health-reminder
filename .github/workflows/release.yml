@@ -6,7 +6,18 @@ on:
       - 'v*'
 
 jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Remove stale release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete "${{ github.ref_name }}" --yes || true
+
   release:
+    needs: prepare-release
     permissions:
       contents: write
     strategy:
