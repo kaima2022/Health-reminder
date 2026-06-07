@@ -5,6 +5,7 @@
   "windows": ["main", "lock-slave-*", "floating-window"],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
     "core:image:default",
     "core:image:allow-from-path",
     "notification:default",

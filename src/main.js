@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification';
 import { check } from '@tauri-apps/plugin-updater';
@@ -52,6 +53,7 @@ let settings = {
   theme: 'light',      // 主题设置
   floatingWindowEnabled: false,
   floatingWindowMode: 'nextReminder',
+  floatingWindowTheme: 'blue',
   floatingCountdownTitle: '秒杀倒计时',
   floatingCountdownTarget: '',
 };
@@ -96,6 +98,23 @@ let isUiSuspended = false;
 let lastTrayTooltipText = '';
 let lastTrayTooltipUpdateAt = 0;
 const TRAY_TOOLTIP_MIN_INTERVAL_MS = 5000;
+const FLOATING_THEMES = ['blue', 'green', 'teal', 'slate'];
+
+function getNextFloatingTheme(theme) {
+  const index = FLOATING_THEMES.indexOf(theme);
+  return FLOATING_THEMES[(index + 1) % FLOATING_THEMES.length];
+}
+
+function getFloatingThemeLabel(theme) {
+  const label = t(`floating.theme.${theme}`);
+  return label === `floating.theme.${theme}` ? theme : label;
+}
+
+async function startFloatingDrag(event) {
+  if (event.button !== 0 || event.target.closest('button, input, select, textarea')) return;
+  event.preventDefault();
+  await getCurrentWindow().startDragging().catch(console.error);
+}
 
 // 同步任务配置到后端
 async function syncTasksToBackend() {
@@ -1451,6 +1470,24 @@ function renderFullUI() {
           </select>
         </div>
 
+        <div class="setting-row" style="${settings.floatingWindowEnabled ? '' : 'display:none;'}" id="floatingThemeRow">
+          <div class="setting-info">
+            <label>${t('settings.floatingTheme')}</label>
+            <span class="setting-desc">${t('settings.floatingThemeDesc')}</span>
+          </div>
+          <div class="floating-theme-swatches">
+            ${FLOATING_THEMES.map(theme => `
+              <button
+                type="button"
+                class="floating-theme-swatch floating-theme-${theme} ${settings.floatingWindowTheme === theme ? 'active' : ''}"
+                data-theme="${theme}"
+                title="${getFloatingThemeLabel(theme)}"
+                aria-label="${getFloatingThemeLabel(theme)}"
+              ></button>
+            `).join('')}
+          </div>
+        </div>
+
         <div class="setting-row" style="${settings.floatingWindowEnabled && settings.floatingWindowMode === 'customCountdown' ? '' : 'display:none;'}" id="floatingCustomRow">
           <div class="setting-info">
             <label>${t('settings.floatingCustom')}</label>
@@ -1629,8 +1666,9 @@ function getFloatingStatusText(task) {
 
 function renderFloatingUI() {
   const app = document.getElementById('app');
+  const floatingTheme = FLOATING_THEMES.includes(settings.floatingWindowTheme) ? settings.floatingWindowTheme : 'blue';
   app.innerHTML = `
-    <div class="floating-shell" data-tauri-drag-region>
+    <div class="floating-shell floating-theme-${floatingTheme}" data-tauri-drag-region>
       <div class="floating-main" data-tauri-drag-region>
         <div class="floating-title" data-tauri-drag-region>${t('floating.nextReminder')}</div>
         <div class="floating-time" data-tauri-drag-region>--:--</div>
@@ -1638,8 +1676,11 @@ function renderFloatingUI() {
       </div>
       <div class="floating-actions">
         <button class="floating-action" id="floatingModeBtn" title="${t('floating.toggleMode')}">${settings.floatingWindowMode === 'customCountdown' ? 'T' : 'N'}</button>
-        <button class="floating-action" id="floatingOpenBtn" title="${t('floating.openMain')}">□</button>
-        <button class="floating-action" id="floatingHideBtn" title="${t('floating.hide')}">×</button>
+        <button class="floating-action" id="floatingThemeBtn" title="${t('floating.themeToggle', { theme: getFloatingThemeLabel(floatingTheme) })}" aria-label="${t('floating.themeToggle', { theme: getFloatingThemeLabel(floatingTheme) })}">
+          <span class="floating-theme-dot"></span>
+        </button>
+        <button class="floating-action" id="floatingOpenBtn" title="${t('floating.openMain')}">O</button>
+        <button class="floating-action" id="floatingHideBtn" title="${t('floating.hide')}">X</button>
       </div>
     </div>
   `;
@@ -1648,6 +1689,11 @@ function renderFloatingUI() {
 }
 
 function bindFloatingEvents() {
+  const shell = document.querySelector('.floating-shell');
+  if (shell) {
+    shell.addEventListener('mousedown', startFloatingDrag);
+  }
+
   const openBtn = document.getElementById('floatingOpenBtn');
   if (openBtn) {
     openBtn.addEventListener('click', () => invoke('show_main_window').catch(console.error));
@@ -1667,6 +1713,15 @@ function bindFloatingEvents() {
       renderFloatingUI();
     });
   }
+
+  const themeBtn = document.getElementById('floatingThemeBtn');
+  if (themeBtn) {
+    themeBtn.addEventListener('click', async () => {
+      settings.floatingWindowTheme = getNextFloatingTheme(settings.floatingWindowTheme || 'blue');
+      await saveSettings();
+      renderFloatingUI();
+    });
+  }
 }
 
 function updateFloatingUI() {
@@ -1676,10 +1731,17 @@ function updateFloatingUI() {
   const timeEl = document.querySelector('.floating-time');
   const metaEl = document.querySelector('.floating-meta');
   const modeBtn = document.getElementById('floatingModeBtn');
+  const themeBtn = document.getElementById('floatingThemeBtn');
   if (!titleEl || !timeEl || !metaEl) return;
 
   if (modeBtn) {
     modeBtn.textContent = settings.floatingWindowMode === 'customCountdown' ? 'T' : 'N';
+  }
+
+  if (themeBtn) {
+    const floatingTheme = FLOATING_THEMES.includes(settings.floatingWindowTheme) ? settings.floatingWindowTheme : 'blue';
+    themeBtn.title = t('floating.themeToggle', { theme: getFloatingThemeLabel(floatingTheme) });
+    themeBtn.setAttribute('aria-label', themeBtn.title);
   }
 
   if (settings.floatingWindowMode === 'customCountdown') {
@@ -1795,6 +1857,15 @@ function bindEvents() {
         updateTask(el.dataset.id, { interval: val });
         updateLiveValues();
       }
+    });
+  });
+
+  document.querySelectorAll('.floating-theme-swatch').forEach(el => {
+    el.addEventListener('click', async () => {
+      settings.floatingWindowTheme = el.dataset.theme || 'blue';
+      await saveSettings();
+      await syncFloatingWindow();
+      renderFullUI();
     });
   });
 

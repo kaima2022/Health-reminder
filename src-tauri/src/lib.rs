@@ -1221,9 +1221,10 @@ fn ensure_floating_window(app: &AppHandle, visible_on_create: bool) -> Result<We
         WebviewUrl::App(PathBuf::from("index.html?mode=floating")),
     )
     .title("Reminder")
-    .inner_size(280.0, 132.0)
+    .inner_size(320.0, 104.0)
     .resizable(false)
     .decorations(false)
+    .transparent(true)
     .always_on_top(true)
     .skip_taskbar(true)
     .visible(visible_on_create)
