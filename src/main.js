@@ -21,7 +21,8 @@ const ICONS = {
   trash: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`,
   bell: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>`,
   volume: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`,
-  globe: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`
+  globe: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`,
+  chevronDown: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`
 };
 
 const DEFAULT_TASKS = [
@@ -54,6 +55,7 @@ let settings = {
   floatingWindowEnabled: false,
   floatingWindowMode: 'nextReminder',
   floatingWindowTheme: 'blue',
+  floatingSelectedTaskId: '',
   floatingCountdownTitle: '秒杀倒计时',
   floatingCountdownTarget: '',
 };
@@ -92,6 +94,7 @@ let startedSilent = false;
 let mainWindowVisibleBeforeLock = true;
 let floatingWindowVisibleBeforeLock = false;
 let floatingCountdownNotified = false;
+let isLockSlaveWindow = false;
 
 let domCache = null;
 let isUiSuspended = false;
@@ -99,11 +102,12 @@ let lastTrayTooltipText = '';
 let lastTrayTooltipUpdateAt = 0;
 const TRAY_TOOLTIP_MIN_INTERVAL_MS = 5000;
 const FLOATING_THEMES = ['blue', 'green', 'teal', 'slate'];
-
-function getNextFloatingTheme(theme) {
-  const index = FLOATING_THEMES.indexOf(theme);
-  return FLOATING_THEMES[(index + 1) % FLOATING_THEMES.length];
-}
+const DEFAULT_TASK_IDS = ['sit', 'water', 'eye'];
+const GENERATED_TASK_TITLE_VALUES = ['New Reminder', '新提醒'];
+const GENERATED_TASK_DESC_VALUES = [
+  'Another energetic day, remember to take breaks~',
+  '又是充满活力的一天，记得休息哦~'
+];
 
 function getFloatingThemeLabel(theme) {
   const label = t(`floating.theme.${theme}`);
@@ -118,16 +122,16 @@ async function startFloatingDrag(event) {
 
 // 同步任务配置到后端
 async function syncTasksToBackend() {
-  const tasksForBackend = settings.tasks.map(t => ({
-    id: t.id,
-    title: t.title,
-    desc: t.desc,
-    interval: t.interval,
-    enabled: t.enabled,
-    icon: t.icon,
+  const tasksForBackend = settings.tasks.map(task => ({
+    id: task.id,
+    title: getTaskDisplayTitle(task),
+    desc: getTaskDisplayDesc(task),
+    interval: task.interval,
+    enabled: task.enabled,
+    icon: task.icon,
     auto_reset_on_idle: settings.resetOnIdle, // 使用全局设置
-    schedule_type: t.scheduleType || 'interval',
-    daily_times: Array.isArray(t.dailyTimes) ? t.dailyTimes : []
+    schedule_type: task.scheduleType || 'interval',
+    daily_times: Array.isArray(task.dailyTimes) ? task.dailyTimes : []
   }));
   await invoke('sync_tasks', { tasks: tasksForBackend }).catch(console.error);
 }
@@ -157,6 +161,21 @@ function normalizeDailyTimes(value) {
     .sort();
 }
 
+function migrateTaskLocalization(task) {
+  const migrated = { ...task };
+  if (DEFAULT_TASK_IDS.includes(migrated.id)) {
+    return migrated;
+  }
+
+  if (!migrated.titleKey && GENERATED_TASK_TITLE_VALUES.includes(migrated.title)) {
+    migrated.titleKey = 'tasks.newTask.title';
+  }
+  if (!migrated.descKey && GENERATED_TASK_DESC_VALUES.includes(migrated.desc)) {
+    migrated.descKey = 'tasks.newTask.desc';
+  }
+  return migrated;
+}
+
 function isDailyTask(task) {
   return task.scheduleType === 'daily' && Array.isArray(task.dailyTimes) && task.dailyTimes.length > 0;
 }
@@ -177,6 +196,30 @@ function getNextTaskInfo() {
   });
 
   return { task: nextTask, remaining: minTime === Infinity ? 0 : minTime };
+}
+
+function getFloatingReminderInfo() {
+  const selectedTaskId = settings.floatingSelectedTaskId || '';
+  if (selectedTaskId) {
+    const task = settings.tasks.find(item => item.id === selectedTaskId);
+    if (task) {
+      return { task, remaining: countdowns[task.id] ?? 0 };
+    }
+  }
+  return getNextTaskInfo();
+}
+
+function getFloatingTaskCycleIds() {
+  return ['', ...settings.tasks.map(task => task.id)];
+}
+
+async function cycleFloatingTask() {
+  const ids = getFloatingTaskCycleIds();
+  const currentIndex = ids.indexOf(settings.floatingSelectedTaskId || '');
+  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % ids.length : 0;
+  settings.floatingSelectedTaskId = ids[nextIndex];
+  await saveSettings();
+  updateFloatingUI();
 }
 
 function formatDuration(seconds) {
@@ -214,6 +257,45 @@ function showMessage(type, text, timeout = 3500) {
       }
     }, timeout);
   }
+}
+
+function renderCurrentSurface() {
+  if (document.body.classList.contains('floating-mode')) {
+    updateFloatingUI();
+  } else {
+    renderFullUI();
+  }
+}
+
+function applyPauseState(paused, options = {}) {
+  const { broadcast = true, render = true } = options;
+  isPaused = paused;
+  if (isPaused) {
+    invoke('timer_pause').catch(console.error);
+  } else {
+    invoke('timer_resume').catch(console.error);
+  }
+  invoke('update_pause_menu', { paused: isPaused }).catch(() => {});
+  if (broadcast) {
+    emit('pause-state-updated', { paused: isPaused }).catch(() => {});
+  }
+  updateTrayTooltip(true);
+  if (render) {
+    renderCurrentSurface();
+  }
+}
+
+function handlePauseStateUpdated(paused) {
+  if (isPaused === paused) return;
+  isPaused = paused;
+  updateTrayTooltip(true);
+  renderCurrentSurface();
+}
+
+function watchPauseState() {
+  listen('pause-state-updated', (event) => {
+    handlePauseStateUpdated(!!event.payload?.paused);
+  }).catch(console.error);
 }
 
 async function playReminderSound() {
@@ -327,7 +409,10 @@ async function init() {
       await loadSettings();
       applyTheme(settings.theme);
       setLocale(settings.language || detectLocale());
+      isPaused = await invoke('timer_is_paused').catch(() => false);
       renderFloatingUI();
+
+      watchPauseState();
 
       listen('countdown-update', (event) => {
         event.payload.forEach(info => {
@@ -355,6 +440,7 @@ async function init() {
   }
 
   if (urlParams.get('mode') === 'lock_slave') {
+    isLockSlaveWindow = true;
     const task = {
       title: urlParams.get('title') || '休息时间',
       desc: urlParams.get('desc') || '让眼睛休息一下',
@@ -406,6 +492,7 @@ async function init() {
 
   await loadSettings();
   applyTheme(settings.theme); // 确保在加载设置后立即应用主题
+  isPaused = await invoke('timer_is_paused').catch(() => false);
   startedSilent = await invoke('was_started_silent').catch(() => false);
 
   // 初始化语言设置
@@ -526,6 +613,8 @@ async function init() {
     togglePause();
   });
 
+  watchPauseState();
+
   await listen('system-locked', () => {
     invoke('timer_set_system_locked', { locked: true }).catch(console.error);
   });
@@ -620,13 +709,13 @@ async function loadSettings() {
       // 迁移逻辑：确保旧数据中的任务也有新字段
       settings.tasks = settings.tasks.map(task => {
         const def = DEFAULT_TASKS.find(d => d.id === task.id);
-        return {
+        return migrateTaskLocalization({
           preNotificationSeconds: def ? def.preNotificationSeconds : 5,
           snoozeMinutes: def ? def.snoozeMinutes : 5,
           scheduleType: 'interval',
           dailyTimes: [],
           ...task
-        };
+        });
       });
     }
   } catch (e) {
@@ -948,6 +1037,7 @@ function addTask() {
   const id = 'task_' + Date.now();
   settings.tasks.push({
     id: id, title: t('tasks.newTask.title'), desc: t('tasks.newTask.desc'),
+    titleKey: 'tasks.newTask.title', descKey: 'tasks.newTask.desc',
     interval: 30, enabled: true, icon: 'bell', lockDuration: 60, autoResetOnIdle: true, preNotificationSeconds: 5, snoozeMinutes: 5, scheduleType: 'interval', dailyTimes: []
   });
   countdowns[id] = 30 * 60;
@@ -958,6 +1048,9 @@ function addTask() {
 
 function removeTask(id) {
   settings.tasks = settings.tasks.filter(t => t.id !== id);
+  if (settings.floatingSelectedTaskId === id) {
+    settings.floatingSelectedTaskId = '';
+  }
   delete countdowns[id];
   saveSettings();
   syncTasksToBackend();
@@ -996,16 +1089,7 @@ function updateTask(id, updates) {
 }
 
 function togglePause() {
-  isPaused = !isPaused;
-  // 通知后端暂停/恢复
-  if (isPaused) {
-    invoke('timer_pause').catch(console.error);
-  } else {
-    invoke('timer_resume').catch(console.error);
-  }
-  invoke('update_pause_menu', { paused: isPaused }).catch(() => {});
-  updateTrayTooltip(true);
-  renderFullUI();
+  applyPauseState(!isPaused);
 }
 
 function resetAll() {
@@ -1020,8 +1104,7 @@ function resetAll() {
       snoozedStatus[task.id].remaining = 0;
     }
   });
-  isPaused = false;
-  invoke('timer_resume').catch(console.error);
+  applyPauseState(false, { render: false });
   updateTrayTooltip(true);
   renderFullUI();
 }
@@ -1041,8 +1124,10 @@ function formatLockTime(seconds) {
 
 // 获取任务的显示标题（默认任务使用翻译，自定义任务使用用户设置）
 function getTaskDisplayTitle(task) {
-  const defaultTaskIds = ['sit', 'water', 'eye'];
-  if (defaultTaskIds.includes(task.id)) {
+  if (task.titleKey) {
+    return t(task.titleKey);
+  }
+  if (DEFAULT_TASK_IDS.includes(task.id)) {
     return t(`tasks.${task.id}.title`);
   }
   return task.title;
@@ -1050,8 +1135,10 @@ function getTaskDisplayTitle(task) {
 
 // 获取任务的显示描述（默认任务使用翻译，自定义任务使用用户设置）
 function getTaskDisplayDesc(task) {
-  const defaultTaskIds = ['sit', 'water', 'eye'];
-  if (defaultTaskIds.includes(task.id)) {
+  if (task.descKey) {
+    return t(task.descKey);
+  }
+  if (DEFAULT_TASK_IDS.includes(task.id)) {
     return t(`tasks.${task.id}.desc`);
   }
   return task.desc;
@@ -1276,10 +1363,10 @@ function renderFullUI() {
           <div class="card-footer">
             <div class="footer-option">
               <span>${t('taskCard.schedule')}</span>
-              <select class="schedule-type-select" data-id="${task.id}">
-                <option value="interval" ${(task.scheduleType || 'interval') === 'interval' ? 'selected' : ''}>${t('taskCard.intervalSchedule')}</option>
-                <option value="daily" ${(task.scheduleType || 'interval') === 'daily' ? 'selected' : ''}>${t('taskCard.dailySchedule')}</option>
-              </select>
+              <div class="schedule-type-control" role="group" aria-label="${t('taskCard.schedule')}">
+                <button type="button" class="schedule-type-option ${(task.scheduleType || 'interval') === 'interval' ? 'active' : ''}" data-id="${task.id}" data-schedule-type="interval">${t('taskCard.intervalSchedule')}</button>
+                <button type="button" class="schedule-type-option ${(task.scheduleType || 'interval') === 'daily' ? 'active' : ''}" data-id="${task.id}" data-schedule-type="daily">${t('taskCard.dailySchedule')}</button>
+              </div>
             </div>
             <div class="footer-option daily-times-option">
               <span>${t('taskCard.dailyTimes')}</span>
@@ -1596,7 +1683,7 @@ function renderFullUI() {
           ${t('buttons.confirmRest')}
         </button>
         ` : `
-        ${settings.strictMode ? '' : `
+        ${settings.strictMode || isLockSlaveWindow ? '' : `
         <button class="unlock-btn" id="unlockBtn">
           <div class="unlock-progress"></div>
           <div class="unlock-text">
@@ -1606,6 +1693,9 @@ function renderFullUI() {
         </button>
         `}
         ${(() => {
+          if (isLockSlaveWindow) {
+            return '';
+          }
           const count = (lockScreenState.task && snoozedStatus[lockScreenState.task.id]) ? snoozedStatus[lockScreenState.task.id].count : 0;
           const isStrictRestricted = settings.strictMode && !settings.allowStrictSnooze;
 
@@ -1660,6 +1750,7 @@ function renderFullUI() {
 function getFloatingStatusText(task) {
   if (isPaused) return t('status.paused');
   if (isIdle) return t('status.idle');
+  if (task && !task.enabled) return t('status.disabled');
   if (task && snoozedStatus[task.id]?.active) return t('status.snoozed');
   return t('floating.nextReminder');
 }
@@ -1671,14 +1762,15 @@ function renderFloatingUI() {
     <div class="floating-shell floating-theme-${floatingTheme}" data-tauri-drag-region>
       <div class="floating-main" data-tauri-drag-region>
         <div class="floating-title" data-tauri-drag-region>${t('floating.nextReminder')}</div>
-        <div class="floating-time" data-tauri-drag-region>--:--</div>
+        <div class="floating-time-row" data-tauri-drag-region>
+          <div class="floating-time" data-tauri-drag-region>--:--</div>
+          <button class="floating-task-cycle" id="floatingTaskCycleBtn" title="${t('floating.selectTask')}">${ICONS.chevronDown}</button>
+        </div>
         <div class="floating-meta" data-tauri-drag-region>${t('status.loading')}</div>
       </div>
       <div class="floating-actions">
-        <button class="floating-action" id="floatingModeBtn" title="${t('floating.toggleMode')}">${settings.floatingWindowMode === 'customCountdown' ? 'T' : 'N'}</button>
-        <button class="floating-action" id="floatingThemeBtn" title="${t('floating.themeToggle', { theme: getFloatingThemeLabel(floatingTheme) })}" aria-label="${t('floating.themeToggle', { theme: getFloatingThemeLabel(floatingTheme) })}">
-          <span class="floating-theme-dot"></span>
-        </button>
+        <button class="floating-action" id="floatingPauseBtn" title="${isPaused ? t('buttons.resume') : t('buttons.pause')}">${isPaused ? ICONS.play : ICONS.pause}</button>
+        <button class="floating-action" id="floatingResetBtn" title="${t('floating.resetTimer')}">${ICONS.reset}</button>
         <button class="floating-action" id="floatingOpenBtn" title="${t('floating.openMain')}">O</button>
         <button class="floating-action" id="floatingHideBtn" title="${t('floating.hide')}">X</button>
       </div>
@@ -1704,22 +1796,28 @@ function bindFloatingEvents() {
     hideBtn.addEventListener('click', () => invoke('hide_floating_window').catch(console.error));
   }
 
-  const modeBtn = document.getElementById('floatingModeBtn');
-  if (modeBtn) {
-    modeBtn.addEventListener('click', async () => {
-      settings.floatingWindowMode = settings.floatingWindowMode === 'nextReminder' ? 'customCountdown' : 'nextReminder';
-      floatingCountdownNotified = false;
-      await saveSettings();
-      renderFloatingUI();
+  const pauseBtn = document.getElementById('floatingPauseBtn');
+  if (pauseBtn) {
+    pauseBtn.addEventListener('click', () => {
+      togglePause();
+      updateFloatingUI();
     });
   }
 
-  const themeBtn = document.getElementById('floatingThemeBtn');
-  if (themeBtn) {
-    themeBtn.addEventListener('click', async () => {
-      settings.floatingWindowTheme = getNextFloatingTheme(settings.floatingWindowTheme || 'blue');
-      await saveSettings();
-      renderFloatingUI();
+  const resetBtn = document.getElementById('floatingResetBtn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      const { task } = getFloatingReminderInfo();
+      if (!task) return;
+      resetTask(task.id);
+      updateFloatingUI();
+    });
+  }
+
+  const taskCycleBtn = document.getElementById('floatingTaskCycleBtn');
+  if (taskCycleBtn) {
+    taskCycleBtn.addEventListener('click', () => {
+      cycleFloatingTask().catch(console.error);
     });
   }
 }
@@ -1730,21 +1828,18 @@ function updateFloatingUI() {
   const titleEl = document.querySelector('.floating-title');
   const timeEl = document.querySelector('.floating-time');
   const metaEl = document.querySelector('.floating-meta');
-  const modeBtn = document.getElementById('floatingModeBtn');
-  const themeBtn = document.getElementById('floatingThemeBtn');
+  const pauseBtn = document.getElementById('floatingPauseBtn');
+  const taskCycleBtn = document.getElementById('floatingTaskCycleBtn');
   if (!titleEl || !timeEl || !metaEl) return;
 
-  if (modeBtn) {
-    modeBtn.textContent = settings.floatingWindowMode === 'customCountdown' ? 'T' : 'N';
-  }
-
-  if (themeBtn) {
-    const floatingTheme = FLOATING_THEMES.includes(settings.floatingWindowTheme) ? settings.floatingWindowTheme : 'blue';
-    themeBtn.title = t('floating.themeToggle', { theme: getFloatingThemeLabel(floatingTheme) });
-    themeBtn.setAttribute('aria-label', themeBtn.title);
+  if (pauseBtn) {
+    pauseBtn.innerHTML = isPaused ? ICONS.play : ICONS.pause;
+    pauseBtn.title = isPaused ? t('buttons.resume') : t('buttons.pause');
   }
 
   if (settings.floatingWindowMode === 'customCountdown') {
+    titleEl.style.display = '';
+    if (taskCycleBtn) taskCycleBtn.style.display = 'none';
     const remaining = getCustomCountdownRemaining();
     const title = settings.floatingCountdownTitle || t('floating.customTitle');
     titleEl.textContent = title;
@@ -1759,7 +1854,9 @@ function updateFloatingUI() {
     return;
   }
 
-  const { task, remaining } = getNextTaskInfo();
+  titleEl.style.display = '';
+  if (taskCycleBtn) taskCycleBtn.style.display = '';
+  const { task, remaining } = getFloatingReminderInfo();
   titleEl.textContent = task ? getTaskDisplayTitle(task) : t('status.noActiveTask');
   timeEl.textContent = task ? formatDuration(remaining) : '--:--';
   metaEl.textContent = getFloatingStatusText(task);
@@ -1869,10 +1966,10 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll('.schedule-type-select').forEach(el => {
-    el.addEventListener('change', (e) => {
+  document.querySelectorAll('.schedule-type-option').forEach(el => {
+    el.addEventListener('click', () => {
       const id = el.dataset.id;
-      const scheduleType = e.target.value;
+      const scheduleType = el.dataset.scheduleType;
       const task = settings.tasks.find(t => t.id === id);
       if (!task) return;
       if (scheduleType === 'daily' && (!task.dailyTimes || task.dailyTimes.length === 0)) {
@@ -1905,7 +2002,11 @@ function bindEvents() {
 
   document.querySelectorAll('.title[contenteditable="true"]').forEach(el => {
     el.addEventListener('blur', (e) => {
-      updateTask(el.dataset.id, { title: e.target.innerText });
+      const task = settings.tasks.find(t => t.id === el.dataset.id);
+      if (task) {
+        delete task.titleKey;
+      }
+      updateTask(el.dataset.id, { title: e.target.innerText.trim() });
       updateLiveValues();
     });
   });
@@ -2212,13 +2313,15 @@ function bindEvents() {
   // 语言切换事件
   const languageSelect = document.getElementById('languageSelect');
   if (languageSelect) {
-    languageSelect.addEventListener('change', (e) => {
+    languageSelect.addEventListener('change', async (e) => {
       const newLocale = e.target.value;
       settings.language = newLocale;
       setLocale(newLocale);
-      saveSettings();
+      await saveSettings();
       // 通知后端更新托盘菜单语言
       invoke('update_tray_language', { language: newLocale }).catch(() => {});
+      await syncTasksToBackend();
+      updateTrayTooltip(true);
       renderFullUI();
     });
   }

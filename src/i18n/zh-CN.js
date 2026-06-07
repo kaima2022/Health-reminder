@@ -151,6 +151,7 @@ export default {
     loading: '正在加载...',
     noActiveTask: '无活动任务',
     snoozed: '推迟中',
+    disabled: '已停用',
   },
 
   // 空闲
@@ -176,6 +177,8 @@ export default {
     done: '目标时间到了',
     toggleMode: '切换模式',
     themeToggle: '切换配色：{theme}',
+    resetTimer: '重置当前提醒',
+    selectTask: '选择悬浮窗任务',
     theme: {
       blue: '蓝色',
       green: '绿色',

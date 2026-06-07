@@ -589,6 +589,11 @@ fn timer_resume() {
 }
 
 #[tauri::command]
+fn timer_is_paused() -> bool {
+    get_timer_state().lock().unwrap().paused
+}
+
+#[tauri::command]
 fn timer_reset_task(task_id: String) {
     let mut state = get_timer_state().lock().unwrap();
     let now = Instant::now();
@@ -626,19 +631,7 @@ fn timer_snooze_task(task_id: String, minutes: u64) {
     let now = Instant::now();
     if let Some(timer) = state.tasks.get_mut(&task_id) {
         let snooze_duration = Duration::from_secs(minutes * 60);
-
-        if is_daily_task(&timer.config) {
-            timer.reset_time = now + snooze_duration;
-        } else {
-            let total_duration = Duration::from_secs(timer.config.interval * 60);
-
-            // reset_time = now + snooze - total
-            if snooze_duration >= total_duration {
-                timer.reset_time = now + (snooze_duration - total_duration);
-            } else {
-                timer.reset_time = now - (total_duration - snooze_duration);
-            }
-        }
+        timer.reset_time = now + snooze_duration;
 
         timer.triggered = false;
         timer.snoozed = true;
@@ -650,6 +643,13 @@ fn timer_snooze_task(task_id: String, minutes: u64) {
 fn get_countdowns() -> Vec<CountdownInfo> {
     let state = get_timer_state().lock().unwrap();
     let now = Instant::now();
+    let frozen_now = if state.paused || state.system_locked {
+        state.pause_start.unwrap_or(now)
+    } else if state.lock_screen_active {
+        state.lock_screen_start.unwrap_or(now)
+    } else {
+        now
+    };
 
     state.tasks.values().map(|timer| {
         let is_daily = is_daily_task(&timer.config);
@@ -659,16 +659,16 @@ fn get_countdowns() -> Vec<CountdownInfo> {
         let effective_now = if let Some(disabled_at) = timer.disabled_at {
             disabled_at
         } else {
-            now
+            frozen_now
         };
 
         let remaining = if timer.snoozed {
             total_secs = timer.reset_time
-                .checked_duration_since(now)
+                .checked_duration_since(effective_now)
                 .map(|duration| duration.as_secs().max(1))
                 .unwrap_or(1);
             timer.reset_time
-                .checked_duration_since(now)
+                .checked_duration_since(effective_now)
                 .map(|duration| duration.as_secs())
                 .unwrap_or(0)
         } else if is_daily {
@@ -681,8 +681,8 @@ fn get_countdowns() -> Vec<CountdownInfo> {
             if elapsed >= total_secs { 0 } else { total_secs - elapsed }
         };
         
-        let snooze_remaining = if timer.reset_time > now {
-            timer.reset_time.duration_since(now).as_secs()
+        let snooze_remaining = if timer.reset_time > effective_now {
+            timer.reset_time.duration_since(effective_now).as_secs()
         } else {
             0
         };
@@ -758,6 +758,9 @@ fn timer_set_lock_screen_active(active: bool) {
         if let Some(lock_start) = state.lock_screen_start {
             let lock_duration = lock_start.elapsed();
             for timer in state.tasks.values_mut() {
+                if timer.snoozed {
+                    continue;
+                }
                 timer.reset_time += lock_duration;
                 // 如果任务被禁用，也需要同步更新 disabled_at，保持相对时间不变
                 if let Some(ref mut disabled_at) = timer.disabled_at {
@@ -1195,10 +1198,14 @@ fn show_notification(app: tauri::AppHandle, title: String, body: String) -> Resu
 }
 
 #[tauri::command]
-fn show_main_window(window: tauri::Window) {
-    let _ = window.unminimize();
-    let _ = window.show();
-    let _ = window.set_focus();
+fn show_main_window(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    window.unminimize().map_err(|e| e.to_string())?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1481,6 +1488,7 @@ pub fn run() {
             sync_tasks,
             timer_pause,
             timer_resume,
+            timer_is_paused,
             timer_reset_task,
             timer_reset_all,
             timer_snooze_task,

@@ -306,7 +306,7 @@ body {
   display: none; /* 默认隐藏 */
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  background: #f9f9f9; /* 浅灰背景 */
+  background: var(--bg);
   border-top: 1px solid var(--border);
   padding: 16px 20px;
   animation: slideDown 0.2s ease-out;
@@ -371,7 +371,7 @@ body {
   width: 100%;
   max-width: 60px;
   padding: 6px 4px;
-  background: white;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 0.9rem;
@@ -380,6 +380,11 @@ body {
   font-weight: 600;
   transition: all 0.2s;
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  color-scheme: light;
+}
+
+[data-theme="dark"] .footer-option .lock-input {
+  color-scheme: dark;
 }
 
 .footer-option select,
@@ -397,9 +402,69 @@ body {
   outline: none;
 }
 
+.language-switcher select,
+.footer-option select,
+.footer-option .daily-times-input,
+.inline-select,
+.floating-custom-inputs input {
+  color-scheme: light;
+}
+
+[data-theme="dark"] .language-switcher select,
+[data-theme="dark"] .footer-option select,
+[data-theme="dark"] .footer-option .daily-times-input,
+[data-theme="dark"] .inline-select,
+[data-theme="dark"] .floating-custom-inputs input {
+  color-scheme: dark;
+}
+
+.language-switcher select option,
+.footer-option select option,
+.inline-select option {
+  background: var(--bg-card);
+  color: var(--text);
+}
+
 .footer-option .daily-times-input {
   max-width: 150px;
   text-align: center;
+}
+
+.schedule-type-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  min-width: 150px;
+  padding: 2px;
+  gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.schedule-type-option {
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.schedule-type-option.active {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 122, 255, 0.2);
+}
+
+.schedule-type-option:not(.active):hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .interval-input:disabled {
@@ -1269,6 +1334,13 @@ body.floating-mode #app {
   text-overflow: ellipsis;
 }
 
+.floating-time-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
 .floating-time {
   font-size: 1.5rem;
   line-height: 1;
@@ -1276,6 +1348,31 @@ body.floating-mode #app {
   color: #fff;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 8px rgba(15, 23, 42, 0.2);
+}
+
+.floating-task-cycle {
+  width: 19px;
+  height: 19px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.floating-task-cycle:hover {
+  border-color: rgba(255, 255, 255, 0.52);
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.floating-task-cycle svg {
+  width: 11px;
+  height: 11px;
 }
 
 .floating-meta {
@@ -1319,13 +1416,9 @@ body.floating-mode #app {
   transform: translateY(-1px);
 }
 
-.floating-theme-dot {
-  width: 9px;
-  height: 9px;
-  display: block;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2);
+.floating-action svg {
+  width: 13px;
+  height: 13px;
 }
 
 /* 空闲阈值设置 */

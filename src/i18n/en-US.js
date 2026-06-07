@@ -151,6 +151,7 @@ export default {
     loading: 'Loading...',
     noActiveTask: 'No Active Task',
     snoozed: 'Snoozed',
+    disabled: 'Disabled',
   },
 
   // Idle
@@ -176,6 +177,8 @@ export default {
     done: 'Target time reached',
     toggleMode: 'Toggle mode',
     themeToggle: 'Switch theme: {theme}',
+    resetTimer: 'Reset current reminder',
+    selectTask: 'Select floating task',
     theme: {
       blue: 'Blue',
       green: 'Green',
