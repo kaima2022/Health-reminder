@@ -1,14 +1,16 @@
 use std::fs;
+use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::collections::{HashMap, HashSet};
 use std::thread;
+use chrono::{Local, Timelike};
 use tauri::{
     menu::{Menu, MenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent, TrayIcon},
-    Manager, WindowEvent, State, Emitter, WebviewWindowBuilder, WebviewUrl, AppHandle,
+    Manager, WindowEvent, State, Emitter, WebviewWindowBuilder, WebviewUrl, AppHandle, WebviewWindow,
 };
 use tauri_plugin_notification::NotificationExt;
 use url::form_urlencoded;
@@ -123,6 +125,7 @@ fn get_idle_seconds_linux() -> u64 {
 }
 
 struct TrayState(Mutex<Option<TrayIcon>>);
+struct FloatingState(Mutex<bool>);
 
 struct LockStateInner {
     windows: Vec<String>,
@@ -154,6 +157,8 @@ fn get_tray_text(key: &str, lang: &str) -> &'static str {
         ("reset_submenu", _) => "重置单个任务",
         ("reset_prefix", "en-US") => "Reset: ",
         ("reset_prefix", _) => "重置: ",
+        ("floating", "en-US") => "Toggle Floating Window",
+        ("floating", _) => "显示/隐藏悬浮窗",
         // 默认任务标题翻译
         ("task_sit", "en-US") => "Stand Up Reminder",
         ("task_sit", _) => "久坐提醒",
@@ -177,6 +182,10 @@ fn get_task_display_title<'a>(task_id: &str, original_title: &'a str, lang: &str
 
 // ============= 后端定时器系统 =============
 
+fn default_schedule_type() -> String {
+    "interval".to_string()
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct TaskConfig {
     pub id: String,
@@ -187,6 +196,10 @@ pub struct TaskConfig {
     pub icon: String,
     #[serde(default)]
     pub auto_reset_on_idle: bool,  // 空闲时自动重置
+    #[serde(default = "default_schedule_type")]
+    pub schedule_type: String,
+    #[serde(default)]
+    pub daily_times: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -197,10 +210,12 @@ struct TaskTimer {
     disabled_at: Option<Instant>,  // 禁用时的时间点，用于计算暂停时长
     snoozed: bool, // 是否处于推迟状态
     snooze_count: u32, // 当前已推迟次数
+    daily_last_trigger_key: Option<String>,
 }
 
 struct TimerState {
     tasks: HashMap<String, TaskTimer>,
+    pending_triggers: Vec<TaskTriggeredPayload>,
     paused: bool,
     pause_start: Option<Instant>,
     system_locked: bool,
@@ -217,6 +232,7 @@ impl TimerState {
     fn new() -> Self {
         Self {
             tasks: HashMap::new(),
+            pending_triggers: Vec::new(),
             paused: false,
             pause_start: None,
             system_locked: false,
@@ -234,6 +250,57 @@ static TIMER_STATE: std::sync::OnceLock<Mutex<TimerState>> = std::sync::OnceLock
 
 fn get_timer_state() -> &'static Mutex<TimerState> {
     TIMER_STATE.get_or_init(|| Mutex::new(TimerState::new()))
+}
+
+fn is_daily_task(task: &TaskConfig) -> bool {
+    task.schedule_type == "daily" && !task.daily_times.is_empty()
+}
+
+fn parse_daily_time(value: &str) -> Option<(u32, u32)> {
+    let trimmed = value.trim();
+    let mut parts = trimmed.split(':');
+    let hour = parts.next()?.parse::<u32>().ok()?;
+    let minute = parts.next()?.parse::<u32>().ok()?;
+    if parts.next().is_some() || hour > 23 || minute > 59 {
+        return None;
+    }
+    Some((hour, minute))
+}
+
+fn current_daily_trigger_key(task: &TaskConfig) -> Option<String> {
+    if !is_daily_task(task) {
+        return None;
+    }
+
+    let now = Local::now();
+    for value in &task.daily_times {
+        if let Some((hour, minute)) = parse_daily_time(value) {
+            if now.hour() == hour && now.minute() == minute {
+                return Some(format!("{}:{:02}:{:02}", now.format("%Y-%m-%d"), hour, minute));
+            }
+        }
+    }
+    None
+}
+
+fn daily_remaining_seconds(task: &TaskConfig) -> u64 {
+    let now = Local::now();
+    let now_secs = now.hour() * 3600 + now.minute() * 60 + now.second();
+    let mut best: Option<u32> = None;
+
+    for value in &task.daily_times {
+        if let Some((hour, minute)) = parse_daily_time(value) {
+            let target_secs = hour * 3600 + minute * 60;
+            let remaining = if target_secs >= now_secs {
+                target_secs - now_secs
+            } else {
+                24 * 3600 - now_secs + target_secs
+            };
+            best = Some(best.map_or(remaining, |current| current.min(remaining)));
+        }
+    }
+
+    best.unwrap_or(task.interval.saturating_mul(60) as u32) as u64
 }
 
 #[cfg(target_os = "windows")]
@@ -365,6 +432,7 @@ fn rebuild_tray_menu(app: &AppHandle) {
     let quit = MenuItem::with_id(app, "quit", get_tray_text("quit", &lang), true, None::<&str>).unwrap();
     let show = MenuItem::with_id(app, "show", get_tray_text("show", &lang), true, None::<&str>).unwrap();
     let reset_all = MenuItem::with_id(app, "reset", get_tray_text("reset", &lang), true, None::<&str>).unwrap();
+    let floating = MenuItem::with_id(app, "floating", get_tray_text("floating", &lang), true, None::<&str>).unwrap();
     let pause_text = if is_paused { get_tray_text("resume", &lang) } else { get_tray_text("pause", &lang) };
     let pause = MenuItem::with_id(app, "pause", pause_text, true, None::<&str>).unwrap();
 
@@ -383,6 +451,7 @@ fn rebuild_tray_menu(app: &AppHandle) {
 
     let menu = Menu::with_items(app, &[
         &show, 
+        &floating,
         &pause, 
         &reset_all, 
         &reset_submenu, 
@@ -411,7 +480,9 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
         for task in tasks {
             if let Some(existing) = state.tasks.get(&task.id) {
                 // 任务已存在
-                let interval_changed = existing.config.interval != task.interval;
+                let interval_changed = existing.config.interval != task.interval
+                    || existing.config.schedule_type != task.schedule_type
+                    || existing.config.daily_times != task.daily_times;
                 let was_disabled = !existing.config.enabled;
                 let is_now_enabled = task.enabled;
                 let was_enabled = existing.config.enabled;
@@ -426,6 +497,7 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
                         disabled_at: None,
                         snoozed: false,
                         snooze_count: 0,
+                        daily_last_trigger_key: None,
                     });
                 } else if was_disabled && is_now_enabled {
                     // 从禁用变为启用，补偿禁用期间的时间
@@ -441,6 +513,7 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
                         disabled_at: None,
                         snoozed: existing.snoozed,
                         snooze_count: existing.snooze_count,
+                        daily_last_trigger_key: existing.daily_last_trigger_key.clone(),
                     });
                 } else if was_enabled && is_now_disabled {
                     // 从启用变为禁用，记录禁用时间点
@@ -451,6 +524,7 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
                         disabled_at: Some(now),
                         snoozed: existing.snoozed,
                         snooze_count: existing.snooze_count,
+                        daily_last_trigger_key: existing.daily_last_trigger_key.clone(),
                     });
                 } else {
                     // 状态没变，保留
@@ -461,6 +535,7 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
                         disabled_at: existing.disabled_at,
                         snoozed: existing.snoozed,
                         snooze_count: existing.snooze_count,
+                        daily_last_trigger_key: existing.daily_last_trigger_key.clone(),
                     });
                 }
             } else {
@@ -472,6 +547,7 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
                     disabled_at: if task.enabled { None } else { Some(now) },
                     snoozed: false,
                     snooze_count: 0,
+                    daily_last_trigger_key: None,
                 });
             }
         }
@@ -549,13 +625,18 @@ fn timer_snooze_task(task_id: String, minutes: u64) {
     let now = Instant::now();
     if let Some(timer) = state.tasks.get_mut(&task_id) {
         let snooze_duration = Duration::from_secs(minutes * 60);
-        let total_duration = Duration::from_secs(timer.config.interval * 60);
 
-        // reset_time = now + snooze - total
-        if snooze_duration >= total_duration {
-            timer.reset_time = now + (snooze_duration - total_duration);
+        if is_daily_task(&timer.config) {
+            timer.reset_time = now + snooze_duration;
         } else {
-            timer.reset_time = now - (total_duration - snooze_duration);
+            let total_duration = Duration::from_secs(timer.config.interval * 60);
+
+            // reset_time = now + snooze - total
+            if snooze_duration >= total_duration {
+                timer.reset_time = now + (snooze_duration - total_duration);
+            } else {
+                timer.reset_time = now - (total_duration - snooze_duration);
+            }
         }
 
         timer.triggered = false;
@@ -570,7 +651,8 @@ fn get_countdowns() -> Vec<CountdownInfo> {
     let now = Instant::now();
 
     state.tasks.values().map(|timer| {
-        let total_secs = timer.config.interval * 60;
+        let is_daily = is_daily_task(&timer.config);
+        let mut total_secs = if is_daily { 24 * 60 * 60 } else { timer.config.interval * 60 };
 
         // 如果任务被禁用，使用禁用时间点计算 elapsed，这样时间就"冻结"了
         let effective_now = if let Some(disabled_at) = timer.disabled_at {
@@ -579,7 +661,18 @@ fn get_countdowns() -> Vec<CountdownInfo> {
             now
         };
 
-        let remaining = if timer.reset_time > effective_now {
+        let remaining = if timer.snoozed {
+            total_secs = timer.reset_time
+                .checked_duration_since(now)
+                .map(|duration| duration.as_secs().max(1))
+                .unwrap_or(1);
+            timer.reset_time
+                .checked_duration_since(now)
+                .map(|duration| duration.as_secs())
+                .unwrap_or(0)
+        } else if is_daily {
+            daily_remaining_seconds(&timer.config)
+        } else if timer.reset_time > effective_now {
             let wait_time = timer.reset_time.duration_since(effective_now).as_secs();
             total_secs + wait_time
         } else {
@@ -603,6 +696,12 @@ fn get_countdowns() -> Vec<CountdownInfo> {
             snooze_count: timer.snooze_count,
         }
     }).collect()
+}
+
+#[tauri::command]
+fn take_triggered_tasks() -> Vec<TaskTriggeredPayload> {
+    let mut state = get_timer_state().lock().unwrap();
+    state.pending_triggers.drain(..).collect()
 }
 
 #[tauri::command]
@@ -880,31 +979,74 @@ fn start_timer_thread(app_handle: AppHandle) {
                 } else {
                     // 正常检查任务触发
                     for timer in state.tasks.values_mut() {
-                        if !timer.config.enabled || timer.triggered {
+                        if !timer.config.enabled {
                             continue;
                         }
 
-                        let elapsed = now.saturating_duration_since(timer.reset_time).as_secs();
-                        let total_secs = timer.config.interval * 60;
+                        if timer.snoozed {
+                            if now >= timer.reset_time {
+                                tasks_to_trigger.push(TaskTriggeredPayload {
+                                    id: timer.config.id.clone(),
+                                    title: timer.config.title.clone(),
+                                    desc: timer.config.desc.clone(),
+                                    icon: timer.config.icon.clone(),
+                                });
+                                timer.triggered = true;
+                                timer.snoozed = false;
+                            }
+                            continue;
+                        }
 
-                        if elapsed >= total_secs {
-                            // 触发提醒
-                            tasks_to_trigger.push(TaskTriggeredPayload {
-                                id: timer.config.id.clone(),
-                                title: timer.config.title.clone(),
-                                desc: timer.config.desc.clone(),
-                                icon: timer.config.icon.clone(),
-                            });
+                        if is_daily_task(&timer.config) {
+                            if let Some(key) = current_daily_trigger_key(&timer.config) {
+                                if timer.daily_last_trigger_key.as_deref() != Some(&key) {
+                                    tasks_to_trigger.push(TaskTriggeredPayload {
+                                        id: timer.config.id.clone(),
+                                        title: timer.config.title.clone(),
+                                        desc: timer.config.desc.clone(),
+                                        icon: timer.config.icon.clone(),
+                                    });
+                                    timer.daily_last_trigger_key = Some(key);
+                                    timer.triggered = true;
+                                }
+                            }
+                        } else if !timer.triggered {
+                            let elapsed = now.saturating_duration_since(timer.reset_time).as_secs();
+                            let total_secs = timer.config.interval * 60;
 
-                            // 标记为已触发，等待用户操作（重置或推迟）
-                            timer.triggered = true;
+                            if elapsed >= total_secs {
+                                // 触发提醒
+                                tasks_to_trigger.push(TaskTriggeredPayload {
+                                    id: timer.config.id.clone(),
+                                    title: timer.config.title.clone(),
+                                    desc: timer.config.desc.clone(),
+                                    icon: timer.config.icon.clone(),
+                                });
+
+                                // 标记为已触发，等待用户操作（重置或推迟）
+                                timer.triggered = true;
+                            }
                         }
                     }
                 }
             }
 
+            if !tasks_to_trigger.is_empty() {
+                let mut state = get_timer_state().lock().unwrap();
+                state.pending_triggers.extend(tasks_to_trigger.iter().cloned());
+            }
+
             // 发送触发事件到前端
             for task in tasks_to_trigger {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    if let Ok(payload) = serde_json::to_string(&task) {
+                        let script = format!(
+                            "window.__HEALTH_REMINDER_HANDLE_TRIGGER__ && window.__HEALTH_REMINDER_HANDLE_TRIGGER__({});",
+                            payload
+                        );
+                        let _ = window.eval(&script);
+                    }
+                }
                 let _ = app_handle.emit("task-triggered", task);
             }
 
@@ -941,7 +1083,34 @@ fn save_settings(settings: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn play_notification_sound() {
+fn was_started_silent() -> bool {
+    std::env::args().any(|arg| arg == "--silent")
+}
+
+fn play_custom_audio_file(file_path: &str) -> Result<(), String> {
+    use std::fs::File;
+    use rodio::{Decoder, OutputStreamBuilder, Sink};
+
+    let stream_handle = OutputStreamBuilder::open_default_stream()
+        .map_err(|e| format!("Failed to create audio output stream: {}", e))?;
+    let sink = Sink::connect_new(stream_handle.mixer());
+    let file = File::open(file_path)
+        .map_err(|e| format!("Failed to open audio file: {}", e))?;
+    let source = Decoder::try_from(BufReader::new(file))
+        .map_err(|e| format!("Failed to decode audio file: {}", e))?;
+
+    sink.append(source);
+    sink.sleep_until_end();
+    Ok(())
+}
+
+fn play_custom_audio_async(file_path: String) {
+    thread::spawn(move || {
+        let _ = play_custom_audio_file(&file_path);
+    });
+}
+
+fn play_system_notification_sound() {
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
@@ -988,13 +1157,40 @@ fn play_notification_sound() {
 }
 
 #[tauri::command]
-fn show_notification(app: tauri::AppHandle, title: String, body: String) {
+fn play_notification_sound(custom_sound_path: Option<String>) -> Result<(), String> {
+    if let Some(path) = custom_sound_path {
+        if !path.trim().is_empty() && std::path::Path::new(&path).exists() {
+            play_custom_audio_async(path);
+            return Ok(());
+        }
+    }
+
+    play_system_notification_sound();
+    Ok(())
+}
+
+#[tauri::command]
+fn test_custom_sound(file_path: String) -> Result<(), String> {
+    if file_path.trim().is_empty() {
+        return Err("No sound file selected".to_string());
+    }
+
+    if !std::path::Path::new(&file_path).exists() {
+        return Err("Sound file does not exist".to_string());
+    }
+
+    play_custom_audio_async(file_path);
+    Ok(())
+}
+
+#[tauri::command]
+fn show_notification(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
     app.notification()
         .builder()
         .title(title)
         .body(body)
         .show()
-        .unwrap();
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1007,6 +1203,68 @@ fn show_main_window(window: tauri::Window) {
 #[tauri::command]
 fn hide_main_window(window: tauri::Window) {
     let _ = window.hide();
+}
+
+#[tauri::command]
+fn is_main_window_visible(window: tauri::Window) -> bool {
+    window.is_visible().unwrap_or(false)
+}
+
+fn ensure_floating_window(app: &AppHandle, visible_on_create: bool) -> Result<WebviewWindow, String> {
+    if let Some(window) = app.get_webview_window("floating-window") {
+        return Ok(window);
+    }
+
+    WebviewWindowBuilder::new(
+        app,
+        "floating-window",
+        WebviewUrl::App(PathBuf::from("index.html?mode=floating")),
+    )
+    .title("Reminder")
+    .inner_size(280.0, 132.0)
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible(visible_on_create)
+    .build()
+    .map_err(|e| e.to_string())
+}
+
+fn show_floating_window_now(app: &AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("floating-window") {
+        if !window.is_visible().unwrap_or(false) {
+            window.show().map_err(|e| e.to_string())?;
+        }
+    } else {
+        let _ = ensure_floating_window(app, true)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn show_floating_window(app: AppHandle, state: State<FloatingState>) -> Result<(), String> {
+    *state.0.lock().unwrap() = true;
+    let app_for_window = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = show_floating_window_now(&app_for_window);
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn hide_floating_window(app: AppHandle, state: State<FloatingState>) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("floating-window") {
+        window.hide().map_err(|e| e.to_string())?;
+    }
+    *state.0.lock().unwrap() = false;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_floating_window_always_on_top(app: AppHandle, always_on_top: bool) -> Result<(), String> {
+    let window = ensure_floating_window(&app, false)?;
+    window.set_always_on_top(always_on_top).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1099,7 +1357,15 @@ fn create_slave_window(app: &AppHandle, monitor: &tauri::Monitor, task: Option<&
 }
 
 #[tauri::command]
-async fn enter_lock_mode(app: tauri::AppHandle, window: tauri::Window, state: State<'_, LockState>, task: Option<LockTaskArgs>) -> Result<(), String> {
+async fn enter_lock_mode(app: tauri::AppHandle, state: State<'_, LockState>, task: Option<LockTaskArgs>) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+
+    if let Some(floating_window) = app.get_webview_window("floating-window") {
+        let _ = floating_window.hide();
+    }
+
     let _ = window.unminimize();
     let _ = window.show();
     let _ = window.set_fullscreen(true);
@@ -1149,11 +1415,25 @@ async fn enter_lock_mode(app: tauri::AppHandle, window: tauri::Window, state: St
 }
 
 #[tauri::command]
-fn exit_lock_mode(app: tauri::AppHandle, window: tauri::Window, state: State<LockState>) {
-    let _ = window.set_fullscreen(false);
-    let _ = window.set_always_on_top(false);
-    let _ = window.set_closable(true);
-    let _ = window.set_minimizable(true);
+fn exit_lock_mode(app: tauri::AppHandle, state: State<LockState>, restore_visible: Option<bool>) {
+    let restore_visible = restore_visible.unwrap_or(false);
+    let window = app.get_webview_window("main");
+
+    if let Some(window) = window {
+        if !restore_visible {
+            let _ = window.hide();
+        }
+
+        let _ = window.set_fullscreen(false);
+        let _ = window.set_always_on_top(false);
+        let _ = window.set_closable(true);
+        let _ = window.set_minimizable(true);
+
+        if restore_visible {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
 
     let mut state_guard = state.0.lock().unwrap();
     for label in state_guard.windows.iter() {
@@ -1179,10 +1459,16 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_settings,
             save_settings,
+            was_started_silent,
             play_notification_sound,
+            test_custom_sound,
             show_notification,
             show_main_window,
             hide_main_window,
+            is_main_window_visible,
+            show_floating_window,
+            hide_floating_window,
+            set_floating_window_always_on_top,
             update_tray_tooltip,
             update_pause_menu,
             update_tray_language,
@@ -1195,21 +1481,24 @@ pub fn run() {
             timer_reset_all,
             timer_snooze_task,
             get_countdowns,
+            take_triggered_tasks,
             timer_set_system_locked,
             timer_set_lock_screen_active,
             set_idle_threshold,
             get_idle_threshold,
         ])
         .manage(TrayState(Mutex::new(None)))
+        .manage(FloatingState(Mutex::new(false)))
         .manage(LockState(Mutex::new(LockStateInner { windows: Vec::new(), args: None })))
         .manage(PauseMenuState(Mutex::new(None)))
         .manage(LanguageState(Mutex::new("zh-CN".to_string())))
         .setup(|app| {
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+            let floating = MenuItem::with_id(app, "floating", "显示/隐藏悬浮窗", true, None::<&str>)?;
             let reset = MenuItem::with_id(app, "reset", "重置所有任务", true, None::<&str>)?;
             let pause = MenuItem::with_id(app, "pause", "暂停", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &pause, &reset, &quit])?;
+            let menu = Menu::with_items(app, &[&show, &floating, &pause, &reset, &quit])?;
             
             let tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -1224,6 +1513,14 @@ pub fn run() {
                             let _ = window.unminimize();
                             let _ = window.show();
                             let _ = window.set_focus();
+                        }
+                    } else if id_str == "floating" {
+                        let state = app.state::<FloatingState>();
+                        let visible = *state.0.lock().unwrap();
+                        if visible {
+                            let _ = hide_floating_window(app.clone(), state);
+                        } else {
+                            let _ = show_floating_window(app.clone(), state);
                         }
                     } else if id_str == "reset" {
                         let _ = app.emit("reset-all-tasks", ());

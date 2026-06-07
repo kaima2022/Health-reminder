@@ -30,7 +30,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
-          cache: 'npm'
+          cache: npm
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -63,7 +63,7 @@ jobs:
             libxss-dev
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
@@ -75,25 +75,25 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'Health Reminder ${{ github.ref_name }}'
           releaseBody: |
-            ## 健康提醒助手 ${{ github.ref_name }}
+            ## Health Reminder ${{ github.ref_name }}
 
-            ### 🛠️ 跨平台支持
-            - **Windows**: 提供 NSIS (.exe) 安装程序。
-            - **macOS**: 支持 Intel (.x86_64) 与 Apple Silicon (.aarch64) 芯片。
-            - **Linux**: 提供 AppImage 与 Debian (.deb) 软件包。
+            ### Platform packages
+            - Windows: NSIS installer (.exe).
+            - macOS: Intel and Apple Silicon DMG packages.
+            - Linux: AppImage and Debian packages.
 
-            ### ✨ 核心功能
-            - 多任务并行健康提醒（久坐、喝水、护眼）。
-            - 适配 Apple 设计语言的高级 UI 仪表盘。
-            - 原生系统级通知支持。
-            - 自定义任务管理与常用预设时间。
+            ### Highlights
+            - Parallel health reminders for sitting, water, eye rest, and custom tasks.
+            - Custom notification sounds with system sound fallback.
+            - Silent auto-start and tray-first startup support.
+            - Floating countdown window and daily fixed-time reminders.
+            - Improved notification fallback and release links.
 
-            🚀 感谢使用！请选择适合您平台的版本下载。
+            Download the package that matches your platform below.
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
 
-  # 更新 Scoop bucket 的 hash
   update-scoop-hash:
     needs: release
     runs-on: ubuntu-latest
@@ -112,6 +112,7 @@ jobs:
           RELEASE_TAG=${{ github.ref_name }}
           ASSET_NAME=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[] | select(.name | endswith("_x64-setup.exe")) | .name')
           gh release download "$RELEASE_TAG" -p "*_x64-setup.exe" -D "$GITHUB_WORKSPACE"
+          echo "Downloaded $ASSET_NAME"
 
       - name: Calculate SHA256 hash
         id: hash
@@ -124,12 +125,10 @@ jobs:
         run: |
           HASH="${{ steps.hash.outputs.hash }}"
           VERSION=${{ github.ref_name }}
-          VERSION=${VERSION#v}  # 移除 v 前缀
+          VERSION=${VERSION#v}
 
-          # 更新 bucket/health-reminder.json
-          # 更新 version、architecture.64bit.url 和 architecture.64bit.hash
           jq --arg version "$VERSION" --arg hash "$HASH" \
-            '.version = $version | .architecture."64bit".url = "https://github.com/kaima2022/desk-reminder/releases/download/v\($version)/health-reminder_\($version)_x64-setup.exe" | .architecture."64bit".hash = $hash' \
+            '.version = $version | .architecture."64bit".url = "https://github.com/kaima2022/Health-reminder/releases/download/v\($version)/health-reminder_\($version)_x64-setup.exe" | .architecture."64bit".hash = $hash' \
             bucket/health-reminder.json > bucket/health-reminder.json.tmp
 
           mv bucket/health-reminder.json.tmp bucket/health-reminder.json

@@ -304,7 +304,7 @@ body {
 /* 卡片底部选项 (可收起) */
 .card-footer {
   display: none; /* 默认隐藏 */
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   background: #f9f9f9; /* 浅灰背景 */
   border-top: 1px solid var(--border);
@@ -380,6 +380,38 @@ body {
   font-weight: 600;
   transition: all 0.2s;
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.footer-option select,
+.footer-option .daily-times-input,
+.inline-select,
+.floating-custom-inputs input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--text);
+  outline: none;
+}
+
+.footer-option .daily-times-input {
+  max-width: 150px;
+  text-align: center;
+}
+
+.interval-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.floating-custom-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 180px;
 }
 
 .footer-option .lock-input:focus {
@@ -838,6 +870,8 @@ body {
 .setting-row .setting-desc {
   font-size: 0.75rem;
   color: var(--text-muted);
+  max-width: 240px;
+  word-break: break-word;
 }
 
 .duration-select {
@@ -1084,6 +1118,10 @@ body {
   border-left: 4px solid var(--success);
 }
 
+.toast-message.warning {
+  border-left: 4px solid var(--warning);
+}
+
 @keyframes toastFadeIn {
   to {
     opacity: 1;
@@ -1116,6 +1154,88 @@ body {
   font-size: 0.875rem;
   color: var(--text);
   font-weight: 500;
+}
+
+body.floating-mode {
+  background: transparent;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+body.floating-mode #app {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  padding: 0;
+}
+
+.floating-shell {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 34px;
+  gap: 6px;
+  padding: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.floating-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+.floating-title {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.floating-time {
+  font-size: 1.75rem;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.floating-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.floating-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  justify-content: center;
+}
+
+.floating-action {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.floating-action:hover {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 /* 空闲阈值设置 */

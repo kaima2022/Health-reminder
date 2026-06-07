@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
-import { requestPermission } from '@tauri-apps/plugin-notification';
+import { isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -24,15 +24,17 @@ const ICONS = {
 };
 
 const DEFAULT_TASKS = [
-  { id: 'sit', title: '久坐提醒', desc: '该起来活动了，走动一下吧~', interval: 45, enabled: true, icon: 'sit', lockDuration: 60, autoResetOnIdle: true, preNotificationSeconds: 5, snoozeMinutes: 5 },
-  { id: 'water', title: '喝水提醒', desc: '该喝口水了，保持水分充足~', interval: 60, enabled: true, icon: 'water', lockDuration: 60, autoResetOnIdle: true, preNotificationSeconds: 5, snoozeMinutes: 5 },
-  { id: 'eye', title: '护眼提醒', desc: '让眼睛休息一下，看看远处~', interval: 20, enabled: true, icon: 'eye', lockDuration: 60, autoResetOnIdle: true, preNotificationSeconds: 5, snoozeMinutes: 2 }
+  { id: 'sit', title: '久坐提醒', desc: '该起来活动了，走动一下吧~', interval: 45, enabled: true, icon: 'sit', lockDuration: 60, autoResetOnIdle: true, preNotificationSeconds: 5, snoozeMinutes: 5, scheduleType: 'interval', dailyTimes: [] },
+  { id: 'water', title: '喝水提醒', desc: '该喝口水了，保持水分充足~', interval: 60, enabled: true, icon: 'water', lockDuration: 60, autoResetOnIdle: true, preNotificationSeconds: 5, snoozeMinutes: 5, scheduleType: 'interval', dailyTimes: [] },
+  { id: 'eye', title: '护眼提醒', desc: '让眼睛休息一下，看看远处~', interval: 20, enabled: true, icon: 'eye', lockDuration: 60, autoResetOnIdle: true, preNotificationSeconds: 5, snoozeMinutes: 2, scheduleType: 'interval', dailyTimes: [] }
 ];
 
 let settings = {
   tasks: [...DEFAULT_TASKS],
   soundEnabled: true,
+  customSoundPath: '',
   autoStart: false,
+  silentAutoStart: true,
   lockScreenEnabled: false,
   lockDuration: 20,
   idleThreshold: 300,  // 空闲阈值，秒，默认 5 分钟
@@ -48,9 +50,14 @@ let settings = {
   language: 'zh-CN',   // 界面语言
   lockScreenBgImage: '',  // 锁屏背景图片路径
   theme: 'light',      // 主题设置
+  floatingWindowEnabled: false,
+  floatingWindowMode: 'nextReminder',
+  floatingCountdownTitle: '秒杀倒计时',
+  floatingCountdownTarget: '',
 };
 
 let countdowns = {};  // 现在由后端事件更新
+let countdownTotals = {};
 let snoozedStatus = {}; // 推迟状态
 let stats = {
   sitBreaks: 0,
@@ -62,6 +69,7 @@ let isIdle = false;  // 当前是否处于空闲状态
 let workStartTime = Date.now();
 let activePopup = null;
 let taskQueue = []; // 任务队列
+let recentTriggeredTasks = {};
 let lockScreenState = {
   active: false,
   remaining: 0,
@@ -75,7 +83,13 @@ let updateInfo = null;
 let isUpdating = false;
 let isCheckingUpdate = false;
 let updateMessage = null;
+let notificationMessage = null;
 let showIdleResetBanner = false;  // 显示空闲重置通知横幅
+let notificationPermissionGranted = false;
+let startedSilent = false;
+let mainWindowVisibleBeforeLock = true;
+let floatingWindowVisibleBeforeLock = false;
+let floatingCountdownNotified = false;
 
 let domCache = null;
 let isUiSuspended = false;
@@ -92,14 +106,235 @@ async function syncTasksToBackend() {
     interval: t.interval,
     enabled: t.enabled,
     icon: t.icon,
-    auto_reset_on_idle: settings.resetOnIdle // 使用全局设置
+    auto_reset_on_idle: settings.resetOnIdle, // 使用全局设置
+    schedule_type: t.scheduleType || 'interval',
+    daily_times: Array.isArray(t.dailyTimes) ? t.dailyTimes : []
   }));
   await invoke('sync_tasks', { tasks: tasksForBackend }).catch(console.error);
 }
 
+function extractDialogPath(selected) {
+  if (!selected) return '';
+  if (typeof selected === 'string') return selected;
+  if (Array.isArray(selected)) return extractDialogPath(selected[0]);
+  return selected.path || '';
+}
+
+function normalizeDailyTimes(value) {
+  return String(value || '')
+    .split(/[,\s，、]+/)
+    .map(item => item.trim())
+    .filter(Boolean)
+    .map(item => {
+      const match = item.match(/^(\d{1,2}):(\d{1,2})$/);
+      if (!match) return null;
+      const hour = Number(match[1]);
+      const minute = Number(match[2]);
+      if (hour > 23 || minute > 59) return null;
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    })
+    .filter(Boolean)
+    .filter((item, index, arr) => arr.indexOf(item) === index)
+    .sort();
+}
+
+function isDailyTask(task) {
+  return task.scheduleType === 'daily' && Array.isArray(task.dailyTimes) && task.dailyTimes.length > 0;
+}
+
+function getCountdownTotal(task) {
+  return countdownTotals[task.id] || (isDailyTask(task) ? 24 * 60 * 60 : task.interval * 60);
+}
+
+function getNextTaskInfo() {
+  let nextTask = null;
+  let minTime = Infinity;
+  settings.tasks.forEach(task => {
+    const remaining = countdowns[task.id];
+    if (task.enabled && remaining !== undefined && remaining < minTime) {
+      minTime = remaining;
+      nextTask = task;
+    }
+  });
+
+  return { task: nextTask, remaining: minTime === Infinity ? 0 : minTime };
+}
+
+function formatDuration(seconds) {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const hours = Math.floor(safeSeconds / 3600);
+  const mins = Math.floor((safeSeconds % 3600) / 60);
+  const secs = safeSeconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function getCustomCountdownRemaining() {
+  if (!settings.floatingCountdownTarget) return null;
+  const target = new Date(settings.floatingCountdownTarget);
+  if (Number.isNaN(target.getTime())) return null;
+  return Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
+}
+
+function showMessage(type, text, timeout = 3500) {
+  notificationMessage = { type, text };
+  if (document.body.classList.contains('floating-mode')) {
+    updateFloatingUI();
+  } else {
+    renderFullUI();
+  }
+  if (timeout > 0) {
+    setTimeout(() => {
+      notificationMessage = null;
+      if (document.body.classList.contains('floating-mode')) {
+        updateFloatingUI();
+      } else {
+        renderFullUI();
+      }
+    }, timeout);
+  }
+}
+
+async function playReminderSound() {
+  if (!settings.soundEnabled) return;
+  await invoke('play_notification_sound', {
+    customSoundPath: settings.customSoundPath || null
+  }).catch(err => {
+    console.error('Sound invoke failed:', err);
+    showMessage('warning', t('notification.soundFailed'));
+  });
+}
+
+async function ensureNotificationPermission() {
+  try {
+    notificationPermissionGranted = await isPermissionGranted();
+    if (!notificationPermissionGranted) {
+      const permission = await requestPermission();
+      notificationPermissionGranted = permission === 'granted';
+    }
+  } catch (e) {
+    notificationPermissionGranted = false;
+    console.error('Failed to check notification permission', e);
+  }
+  return notificationPermissionGranted;
+}
+
+async function notifySystem(title, body, options = {}) {
+  const granted = await ensureNotificationPermission();
+  if (!granted) {
+    if (options.showToast !== false) {
+      showMessage('warning', t('notification.permissionDenied'));
+    }
+    return false;
+  }
+
+  try {
+    await invoke('show_notification', { title, body });
+    return true;
+  } catch (e) {
+    console.error('System notification failed:', e);
+    if (options.showToast !== false) {
+      showMessage('warning', t('notification.fallback'));
+    }
+    return false;
+  }
+}
+
+async function syncFloatingWindow() {
+  if (settings.floatingWindowEnabled) {
+    await invoke('show_floating_window').catch(console.error);
+  } else {
+    await invoke('hide_floating_window').catch(console.error);
+  }
+  emit('settings-updated', settings).catch(() => {});
+}
+
+async function handleTriggeredTask(task) {
+  const now = Date.now();
+  if (recentTriggeredTasks[task.id] && now - recentTriggeredTasks[task.id] < 5000) {
+    return;
+  }
+  recentTriggeredTasks[task.id] = now;
+
+  // 找到完整的任务配置
+  const fullTask = settings.tasks.find(t => t.id === task.id) || task;
+
+  if (activePopup || lockScreenState.active) {
+    // 如果当前已有弹窗或锁屏，加入队列
+    if (!taskQueue.find(t => t.id === fullTask.id)) {
+      taskQueue.push(fullTask);
+    }
+  } else {
+    await triggerNotification(fullTask);
+  }
+}
+
+async function pollTriggeredTasks() {
+  try {
+    const tasks = await invoke('take_triggered_tasks');
+    if (Array.isArray(tasks)) {
+      for (const task of tasks) {
+        await handleTriggeredTask(task);
+      }
+    }
+  } catch (e) {
+    console.error('Failed to poll triggered tasks', e);
+  }
+}
+
+function startTriggeredTaskPolling() {
+  const run = async () => {
+    await pollTriggeredTasks();
+    window.setTimeout(run, 1000);
+  };
+  run();
+}
+
+window.__HEALTH_REMINDER_HANDLE_TRIGGER__ = (task) => {
+  handleTriggeredTask(task).catch(console.error);
+};
+
 async function init() {
   applyTheme(settings.theme); // 在加载设置后立即应用主题
   const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('mode') === 'floating') {
+    document.body.classList.add('floating-mode');
+    setLocale(settings.language || detectLocale());
+    renderFloatingUI();
+
+    window.setTimeout(async () => {
+      await loadSettings();
+      applyTheme(settings.theme);
+      setLocale(settings.language || detectLocale());
+      renderFloatingUI();
+
+      listen('countdown-update', (event) => {
+        event.payload.forEach(info => {
+          countdowns[info.id] = info.remaining;
+          countdownTotals[info.id] = info.total;
+          snoozedStatus[info.id] = {
+            active: info.snoozed,
+            remaining: info.snooze_remaining,
+            count: info.snooze_count
+          };
+        });
+        updateFloatingUI();
+      }).catch(console.error);
+
+      listen('settings-updated', (event) => {
+        settings = { ...settings, ...event.payload };
+        setLocale(settings.language || detectLocale());
+        applyTheme(settings.theme);
+        renderFloatingUI();
+      });
+
+      setInterval(updateFloatingUI, 1000);
+    }, 500);
+    return;
+  }
+
   if (urlParams.get('mode') === 'lock_slave') {
     const task = {
       title: urlParams.get('title') || '休息时间',
@@ -152,6 +387,7 @@ async function init() {
 
   await loadSettings();
   applyTheme(settings.theme); // 确保在加载设置后立即应用主题
+  startedSilent = await invoke('was_started_silent').catch(() => false);
 
   // 初始化语言设置
   if (settings.language) {
@@ -171,16 +407,12 @@ async function init() {
     console.error('Failed to check autostart status', e);
   }
 
-  try {
-    await requestPermission();
-  } catch (e) {
-    console.error('Failed to request notification permission', e);
-  }
+  await ensureNotificationPermission();
 
   // 初始化 countdowns 对象用于 UI 显示
   settings.tasks.forEach(task => {
     if (countdowns[task.id] === undefined) {
-      countdowns[task.id] = task.interval * 60;
+      countdowns[task.id] = isDailyTask(task) ? 0 : task.interval * 60;
     }
   });
 
@@ -203,10 +435,11 @@ async function init() {
   });
 
   // 监听后端倒计时更新事件
-  listen('countdown-update', (event) => {
+  await listen('countdown-update', (event) => {
     const updates = event.payload;
     updates.forEach(info => {
       countdowns[info.id] = info.remaining;
+      countdownTotals[info.id] = info.total;
       snoozedStatus[info.id] = { 
         active: info.snoozed, 
         remaining: info.snooze_remaining,
@@ -220,12 +453,13 @@ async function init() {
       if (info.enabled && !isIdle && !isPaused && preNotifyTime > 0 && info.remaining === preNotifyTime) {
         if (task) {
            if (settings.soundEnabled) {
-             invoke('play_notification_sound').catch(() => {});
+             playReminderSound();
            }
-           invoke('show_notification', {
-             title: t('notification.preNotifyTitle', { title: getTaskDisplayTitle(task) }),
-             body: t('notification.preNotifyBody', { seconds: preNotifyTime })
-           }).catch(console.error);
+           notifySystem(
+             t('notification.preNotifyTitle', { title: getTaskDisplayTitle(task) }),
+             t('notification.preNotifyBody', { seconds: preNotifyTime }),
+             { showToast: false }
+           );
         }
       }
     });
@@ -237,23 +471,13 @@ async function init() {
   });
 
   // 监听后端任务触发事件
-  listen('task-triggered', async (event) => {
-    const task = event.payload;
-    // 找到完整的任务配置
-    const fullTask = settings.tasks.find(t => t.id === task.id) || task;
-    
-    if (activePopup || lockScreenState.active) {
-      // 如果当前已有弹窗或锁屏，加入队列
-      if (!taskQueue.find(t => t.id === fullTask.id)) {
-        taskQueue.push(fullTask);
-      }
-    } else {
-      await triggerNotification(fullTask);
-    }
+  await listen('task-triggered', async (event) => {
+    await handleTriggeredTask(event.payload);
   });
+  startTriggeredTaskPolling();
 
   // 监听空闲状态变化
-  listen('idle-status-changed', (event) => {
+  await listen('idle-status-changed', (event) => {
     const status = event.payload;
     const wasIdle = isIdle;
     isIdle = status.is_idle;
@@ -271,23 +495,23 @@ async function init() {
     }
   });
 
-  listen('show-window', () => {
+  await listen('show-window', () => {
     invoke('show_main_window');
   });
 
-  listen('reset-all-tasks', () => {
+  await listen('reset-all-tasks', () => {
     resetAll();
   });
 
-  listen('toggle-pause', () => {
+  await listen('toggle-pause', () => {
     togglePause();
   });
 
-  listen('system-locked', () => {
+  await listen('system-locked', () => {
     invoke('timer_set_system_locked', { locked: true }).catch(console.error);
   });
 
-  listen('system-unlocked', () => {
+  await listen('system-unlocked', () => {
     invoke('timer_set_system_locked', { locked: false }).catch(console.error);
   });
 
@@ -295,6 +519,13 @@ async function init() {
   setInterval(() => {
     stats.workMinutes = Math.floor((Date.now() - workStartTime) / 60000);
   }, 1000);
+
+  if (startedSilent && settings.silentAutoStart) {
+    await invoke('hide_main_window').catch(() => {});
+  } else {
+    await invoke('show_main_window').catch(() => {});
+  }
+  await syncFloatingWindow();
 
   checkForUpdates();
 }
@@ -373,6 +604,8 @@ async function loadSettings() {
         return {
           preNotificationSeconds: def ? def.preNotificationSeconds : 5,
           snoozeMinutes: def ? def.snoozeMinutes : 5,
+          scheduleType: 'interval',
+          dailyTimes: [],
           ...task
         };
       });
@@ -392,6 +625,7 @@ async function loadSettings() {
 
 async function saveSettings() {
   await invoke('save_settings', { settings: JSON.stringify(settings) });
+  emit('settings-updated', settings).catch(() => {});
 }
 
 function saveStats() {
@@ -409,9 +643,7 @@ function applyTheme(theme) {
 // tick 函数已移至 Rust 后端，不再需要前端定时器
 
 async function triggerNotification(task) {
-  if (settings.soundEnabled) {
-    invoke('play_notification_sound').catch(() => {});
-  }
+  await playReminderSound();
   
   // 计算合并的任务
   let mergedTasks = [task];
@@ -434,9 +666,11 @@ async function triggerNotification(task) {
   const mergedTaskIds = mergedTasks.map(t => t.id);
   const displayTitle = getMergedDisplayTitle(mergedTaskIds);
   
-  invoke('show_notification', { title: displayTitle, body: getTaskDisplayDesc(task) }).catch(console.error);
+  notifySystem(displayTitle, getTaskDisplayDesc(task)).catch(console.error);
 
   if (settings.lockScreenEnabled) {
+    renderFullUI();
+    await new Promise(resolve => setTimeout(resolve, 0));
     await startLockScreen(task, mergedTasks);
   } else {
     activePopup = { ...task, mergedTaskIds: mergedTasks.map(t => t.id) };
@@ -445,9 +679,22 @@ async function triggerNotification(task) {
 }
 
 async function startLockScreen(task, mergedTasks = []) {
+  try {
+    invoke('timer_set_lock_screen_active', { active: true }).catch(console.error);
+  } catch (e) {
+    console.error(e);
+  }
+  mainWindowVisibleBeforeLock = true;
   // 通知后端锁屏模式激活
   invoke('timer_set_lock_screen_active', { active: true }).catch(console.error);
-
+  invoke('is_main_window_visible')
+    .then(visible => {
+      mainWindowVisibleBeforeLock = visible;
+    })
+    .catch(() => {
+      mainWindowVisibleBeforeLock = true;
+    });
+  floatingWindowVisibleBeforeLock = settings.floatingWindowEnabled;
   // 使用任务级别的锁屏时长，如果没有则使用全局设置
   const lockDuration = task.lockDuration || settings.lockDuration;
   const mergedIds = mergedTasks.length > 0 ? mergedTasks.map(t => t.id) : [task.id];
@@ -462,8 +709,9 @@ async function startLockScreen(task, mergedTasks = []) {
     waitingConfirm: false,
   };
 
+  renderFullUI();
+
   try {
-    await invoke('show_main_window');
     await invoke('enter_lock_mode', {
       task: {
         title: getMergedDisplayTitle(mergedIds),
@@ -481,8 +729,6 @@ async function startLockScreen(task, mergedTasks = []) {
   } catch (e) {
     console.error('Failed to enter lock mode', e);
   }
-
-  renderFullUI();
 
   const lockInterval = setInterval(() => {
     if (!lockScreenState.active) {
@@ -547,8 +793,8 @@ async function snoozeTask(minutes) {
 }
 
 async function endLockScreen(snoozed = false) {
-  lockScreenState.active = false;
-  lockScreenState.waitingConfirm = false;
+  const restoreMainWindow = mainWindowVisibleBeforeLock;
+  const restoreFloatingWindow = floatingWindowVisibleBeforeLock && settings.floatingWindowEnabled;
 
   // 通知后端锁屏模式结束
   invoke('timer_set_lock_screen_active', { active: false }).catch(console.error);
@@ -570,12 +816,16 @@ async function endLockScreen(snoozed = false) {
   }
 
   try {
-    await invoke('exit_lock_mode');
-    await invoke('hide_main_window');
+    await invoke('exit_lock_mode', { restoreVisible: restoreMainWindow });
+    if (restoreFloatingWindow) {
+      invoke('show_floating_window').catch(console.error);
+    }
   } catch (e) {
     console.error('Failed to exit lock mode', e);
   }
 
+  lockScreenState.active = false;
+  lockScreenState.waitingConfirm = false;
   processNextTask();
 }
 
@@ -679,7 +929,7 @@ function addTask() {
   const id = 'task_' + Date.now();
   settings.tasks.push({
     id: id, title: t('tasks.newTask.title'), desc: t('tasks.newTask.desc'),
-    interval: 30, enabled: true, icon: 'bell', lockDuration: 60, autoResetOnIdle: true, preNotificationSeconds: 5, snoozeMinutes: 5
+    interval: 30, enabled: true, icon: 'bell', lockDuration: 60, autoResetOnIdle: true, preNotificationSeconds: 5, snoozeMinutes: 5, scheduleType: 'interval', dailyTimes: []
   });
   countdowns[id] = 30 * 60;
   saveSettings();
@@ -698,7 +948,9 @@ function removeTask(id) {
 function resetTask(id) {
   const task = settings.tasks.find(t => t.id === id);
   if (task) {
-    countdowns[id] = task.interval * 60;
+    if (!isDailyTask(task)) {
+      countdowns[id] = task.interval * 60;
+    }
     // 重置时清除推迟状态
     if (snoozedStatus[id]) {
       snoozedStatus[id].active = false;
@@ -715,7 +967,7 @@ function updateTask(id, updates) {
   const task = settings.tasks.find(t => t.id === id);
   if (task) {
     Object.assign(task, updates);
-    if (updates.interval !== undefined) {
+    if (updates.interval !== undefined && !isDailyTask(task)) {
       countdowns[id] = task.interval * 60;
     }
     saveSettings();
@@ -741,7 +993,9 @@ function resetAll() {
   // 通知后端重置所有任务
   invoke('timer_reset_all').catch(console.error);
   settings.tasks.forEach(task => {
-    countdowns[task.id] = task.interval * 60;
+    if (!isDailyTask(task)) {
+      countdowns[task.id] = task.interval * 60;
+    }
     if (snoozedStatus[task.id]) {
       snoozedStatus[task.id].active = false;
       snoozedStatus[task.id].remaining = 0;
@@ -754,9 +1008,7 @@ function resetAll() {
 }
 
 function formatTime(seconds) {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  return formatDuration(seconds);
 }
 
 function formatLockTime(seconds) {
@@ -877,14 +1129,7 @@ function updateLiveValues() {
   if (statsElements[1]) statsElements[1].innerText = stats.waterCups;
   if (statsElements[2]) statsElements[2].innerText = stats.workMinutes;
 
-  let nextTask = null;
-  let minTime = Infinity;
-  settings.tasks.forEach(t => {
-    if (t.enabled && countdowns[t.id] < minTime) {
-      minTime = countdowns[t.id];
-      nextTask = t;
-    }
-  });
+  const { task: nextTask } = getNextTaskInfo();
 
   if (domCache.timerMinutes && domCache.timerSeconds) {
     const timeStr = nextTask ? formatTime(countdowns[nextTask.id]) : '--:--';
@@ -904,7 +1149,7 @@ function updateLiveValues() {
   }
 
   if (domCache.mainRingProgress && nextTask) {
-    const total = nextTask.interval * 60;
+    const total = getCountdownTotal(nextTask);
     if (total > 0) {
       const offset = 502 * (1 - (countdowns[nextTask.id] ?? 0) / total);
       domCache.mainRingProgress.style.strokeDashoffset = offset;
@@ -916,7 +1161,7 @@ function updateLiveValues() {
     if (!cardRefs) return;
 
     let current = countdowns[task.id] || 0;
-    let total = task.interval * 60;
+    let total = getCountdownTotal(task);
     const snoozeState = snoozedStatus[task.id];
     const isSnoozed = snoozeState && snoozeState.active;
 
@@ -991,8 +1236,8 @@ function renderFullUI() {
             <div class="info">
               <div class="title" contenteditable="${!['sit', 'water', 'eye'].includes(task.id)}" data-id="${task.id}">${getTaskDisplayTitle(task)}</div>
               <div class="time-info">
-                <input type="number" class="interval-input" value="${task.interval}" data-id="${task.id}" min="1" max="1440">
-                <span class="time-unit">${t('time.minutes')}</span>
+                <input type="number" class="interval-input" value="${task.interval}" data-id="${task.id}" min="1" max="1440" ${isDailyTask(task) ? 'disabled' : ''}>
+                <span class="time-unit">${isDailyTask(task) ? t('time.daily') : t('time.minutes')}</span>
                 <span class="time-remaining"></span>
               </div>
             </div>
@@ -1011,6 +1256,17 @@ function renderFullUI() {
           </div>
           <div class="card-footer">
             <div class="footer-option">
+              <span>${t('taskCard.schedule')}</span>
+              <select class="schedule-type-select" data-id="${task.id}">
+                <option value="interval" ${(task.scheduleType || 'interval') === 'interval' ? 'selected' : ''}>${t('taskCard.intervalSchedule')}</option>
+                <option value="daily" ${(task.scheduleType || 'interval') === 'daily' ? 'selected' : ''}>${t('taskCard.dailySchedule')}</option>
+              </select>
+            </div>
+            <div class="footer-option daily-times-option">
+              <span>${t('taskCard.dailyTimes')}</span>
+              <input type="text" class="daily-times-input" value="${(task.dailyTimes || []).join(', ')}" data-id="${task.id}" placeholder="11:00, 21:00">
+            </div>
+            <div class="footer-option">
               <span>${t('taskCard.preNotify')}</span>
               <input type="number" class="lock-input pre-notify-input" value="${task.preNotificationSeconds !== undefined ? task.preNotificationSeconds : 5}" data-id="${task.id}" min="0" max="120">
               <span>${t('time.seconds')}</span>
@@ -1022,7 +1278,7 @@ function renderFullUI() {
             </div>
             <div class="footer-option">
               <span>${t('taskCard.lockDuration')}</span>
-              <input type="number" class="lock-input" value="${task.lockDuration || settings.lockDuration}" data-id="${task.id}" min="5" max="3600">
+              <input type="number" class="lock-input lock-duration-input" value="${task.lockDuration || settings.lockDuration}" data-id="${task.id}" min="5" max="3600">
               <span>${t('time.seconds')}</span>
             </div>
           </div>
@@ -1137,16 +1393,73 @@ function renderFullUI() {
         </div>
 
         <div class="setting-row">
-          <label>${t('settings.sound')}</label>
+          <div class="setting-info">
+            <label>${t('settings.sound')}</label>
+            <span class="setting-desc">${t('settings.soundDesc')}</span>
+          </div>
           <div style="display:flex; gap:12px; align-items:center;">
             <button class="preset-btn" id="testSoundBtn" style="padding:4px 8px; display:flex; gap:4px; align-items:center;">${ICONS.volume} ${t('buttons.test')}</button>
             <div class="toggle ${settings.soundEnabled ? 'active' : ''}" id="soundToggle"></div>
           </div>
         </div>
 
+        <div class="setting-row" style="${settings.soundEnabled ? '' : 'display:none;'}" id="customSoundRow">
+          <div class="setting-info">
+            <label>${t('settings.customSound')}</label>
+            <span class="setting-desc">${settings.customSoundPath || t('settings.customSoundDesc')}</span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button class="preset-btn" id="selectCustomSoundBtn" style="padding:6px 12px;">
+              ${settings.customSoundPath ? t('buttons.changeSound') : t('buttons.selectSound')}
+            </button>
+            ${settings.customSoundPath ? `<button class="preset-btn" id="clearCustomSoundBtn" style="padding:6px 12px;">${t('buttons.clearSound')}</button>` : ''}
+          </div>
+        </div>
+
         <div class="setting-row">
-          <label>${t('settings.autoStart')}</label>
+          <div class="setting-info">
+            <label>${t('settings.autoStart')}</label>
+            <span class="setting-desc">${t('settings.autoStartDesc')}</span>
+          </div>
           <div class="toggle ${settings.autoStart ? 'active' : ''}" id="startToggle"></div>
+        </div>
+
+        <div class="setting-row" style="${settings.autoStart ? '' : 'display:none;'}" id="silentAutoStartRow">
+          <div class="setting-info">
+            <label>${t('settings.silentAutoStart')}</label>
+            <span class="setting-desc">${t('settings.silentAutoStartDesc')}</span>
+          </div>
+          <div class="toggle ${settings.silentAutoStart ? 'active' : ''}" id="silentAutoStartToggle"></div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>${t('settings.floatingWindow')}</label>
+            <span class="setting-desc">${t('settings.floatingWindowDesc')}</span>
+          </div>
+          <div class="toggle ${settings.floatingWindowEnabled ? 'active' : ''}" id="floatingWindowToggle"></div>
+        </div>
+
+        <div class="setting-row" style="${settings.floatingWindowEnabled ? '' : 'display:none;'}" id="floatingModeRow">
+          <div class="setting-info">
+            <label>${t('settings.floatingMode')}</label>
+            <span class="setting-desc">${t('settings.floatingModeDesc')}</span>
+          </div>
+          <select class="inline-select" id="floatingModeSelect">
+            <option value="nextReminder" ${settings.floatingWindowMode === 'nextReminder' ? 'selected' : ''}>${t('settings.floatingModeNext')}</option>
+            <option value="customCountdown" ${settings.floatingWindowMode === 'customCountdown' ? 'selected' : ''}>${t('settings.floatingModeCustom')}</option>
+          </select>
+        </div>
+
+        <div class="setting-row" style="${settings.floatingWindowEnabled && settings.floatingWindowMode === 'customCountdown' ? '' : 'display:none;'}" id="floatingCustomRow">
+          <div class="setting-info">
+            <label>${t('settings.floatingCustom')}</label>
+            <span class="setting-desc">${t('settings.floatingCustomDesc')}</span>
+          </div>
+          <div class="floating-custom-inputs">
+            <input type="text" id="floatingCountdownTitleInput" value="${settings.floatingCountdownTitle || ''}" placeholder="${t('settings.floatingTitlePlaceholder')}">
+            <input type="datetime-local" id="floatingCountdownTargetInput" value="${settings.floatingCountdownTarget || ''}">
+          </div>
         </div>
 
         <div class="setting-row">
@@ -1187,6 +1500,15 @@ function renderFullUI() {
       <div class="toast-content">
         <span class="toast-icon">${updateMessage.type === 'error' ? '❌' : '✅'}</span>
         <span class="toast-text">${updateMessage.text}</span>
+      </div>
+    </div>
+    ` : ''}
+
+    ${notificationMessage ? `
+    <div class="toast-message ${notificationMessage.type}">
+      <div class="toast-content">
+        <span class="toast-icon">${notificationMessage.type === 'warning' ? '!' : 'i'}</span>
+        <span class="toast-text">${notificationMessage.text}</span>
       </div>
     </div>
     ` : ''}
@@ -1298,6 +1620,89 @@ function renderFullUI() {
   updateLiveValues();
 }
 
+function getFloatingStatusText(task) {
+  if (isPaused) return t('status.paused');
+  if (isIdle) return t('status.idle');
+  if (task && snoozedStatus[task.id]?.active) return t('status.snoozed');
+  return t('floating.nextReminder');
+}
+
+function renderFloatingUI() {
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="floating-shell" data-tauri-drag-region>
+      <div class="floating-main" data-tauri-drag-region>
+        <div class="floating-title" data-tauri-drag-region>${t('floating.nextReminder')}</div>
+        <div class="floating-time" data-tauri-drag-region>--:--</div>
+        <div class="floating-meta" data-tauri-drag-region>${t('status.loading')}</div>
+      </div>
+      <div class="floating-actions">
+        <button class="floating-action" id="floatingModeBtn" title="${t('floating.toggleMode')}">${settings.floatingWindowMode === 'customCountdown' ? 'T' : 'N'}</button>
+        <button class="floating-action" id="floatingOpenBtn" title="${t('floating.openMain')}">□</button>
+        <button class="floating-action" id="floatingHideBtn" title="${t('floating.hide')}">×</button>
+      </div>
+    </div>
+  `;
+  bindFloatingEvents();
+  updateFloatingUI();
+}
+
+function bindFloatingEvents() {
+  const openBtn = document.getElementById('floatingOpenBtn');
+  if (openBtn) {
+    openBtn.addEventListener('click', () => invoke('show_main_window').catch(console.error));
+  }
+
+  const hideBtn = document.getElementById('floatingHideBtn');
+  if (hideBtn) {
+    hideBtn.addEventListener('click', () => invoke('hide_floating_window').catch(console.error));
+  }
+
+  const modeBtn = document.getElementById('floatingModeBtn');
+  if (modeBtn) {
+    modeBtn.addEventListener('click', async () => {
+      settings.floatingWindowMode = settings.floatingWindowMode === 'nextReminder' ? 'customCountdown' : 'nextReminder';
+      floatingCountdownNotified = false;
+      await saveSettings();
+      renderFloatingUI();
+    });
+  }
+}
+
+function updateFloatingUI() {
+  if (!document.body.classList.contains('floating-mode')) return;
+
+  const titleEl = document.querySelector('.floating-title');
+  const timeEl = document.querySelector('.floating-time');
+  const metaEl = document.querySelector('.floating-meta');
+  const modeBtn = document.getElementById('floatingModeBtn');
+  if (!titleEl || !timeEl || !metaEl) return;
+
+  if (modeBtn) {
+    modeBtn.textContent = settings.floatingWindowMode === 'customCountdown' ? 'T' : 'N';
+  }
+
+  if (settings.floatingWindowMode === 'customCountdown') {
+    const remaining = getCustomCountdownRemaining();
+    const title = settings.floatingCountdownTitle || t('floating.customTitle');
+    titleEl.textContent = title;
+    timeEl.textContent = remaining === null ? '--:--' : formatDuration(remaining);
+    metaEl.textContent = settings.floatingCountdownTarget ? t('floating.customCountdown') : t('floating.noTarget');
+
+    if (remaining === 0 && settings.floatingCountdownTarget && !floatingCountdownNotified) {
+      floatingCountdownNotified = true;
+      playReminderSound();
+      notifySystem(title, t('floating.done'), { showToast: false });
+    }
+    return;
+  }
+
+  const { task, remaining } = getNextTaskInfo();
+  titleEl.textContent = task ? getTaskDisplayTitle(task) : t('status.noActiveTask');
+  timeEl.textContent = task ? formatDuration(remaining) : '--:--';
+  metaEl.textContent = getFloatingStatusText(task);
+}
+
 function bindEvents() {
   document.querySelectorAll('.toggle').forEach(el => {
     el.addEventListener('click', async (e) => {
@@ -1314,6 +1719,7 @@ function bindEvents() {
         settings.soundEnabled = !settings.soundEnabled;
         el.classList.toggle('active', settings.soundEnabled);
         saveSettings();
+        renderFullUI();
       } else if (el.id === 'startToggle') {
         try {
           const newState = !settings.autoStart;
@@ -1325,9 +1731,20 @@ function bindEvents() {
           settings.autoStart = newState;
           el.classList.toggle('active', settings.autoStart);
           saveSettings();
+          renderFullUI();
         } catch (err) {
           console.error('Failed to toggle autostart', err);
         }
+      } else if (el.id === 'silentAutoStartToggle') {
+        settings.silentAutoStart = !settings.silentAutoStart;
+        el.classList.toggle('active', settings.silentAutoStart);
+        saveSettings();
+      } else if (el.id === 'floatingWindowToggle') {
+        settings.floatingWindowEnabled = !settings.floatingWindowEnabled;
+        el.classList.toggle('active', settings.floatingWindowEnabled);
+        saveSettings();
+        syncFloatingWindow();
+        renderFullUI();
       } else if (el.id === 'lockToggle') {
         settings.lockScreenEnabled = !settings.lockScreenEnabled;
         el.classList.toggle('active', settings.lockScreenEnabled);
@@ -1372,6 +1789,7 @@ function bindEvents() {
 
   document.querySelectorAll('.interval-input').forEach(el => {
     el.addEventListener('input', (e) => {
+      if (el.disabled) return;
       const val = parseInt(e.target.value);
       if (val > 0) {
         updateTask(el.dataset.id, { interval: val });
@@ -1380,7 +1798,31 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll('.preset-btn:not(#testSoundBtn)').forEach(el => {
+  document.querySelectorAll('.schedule-type-select').forEach(el => {
+    el.addEventListener('change', (e) => {
+      const id = el.dataset.id;
+      const scheduleType = e.target.value;
+      const task = settings.tasks.find(t => t.id === id);
+      if (!task) return;
+      if (scheduleType === 'daily' && (!task.dailyTimes || task.dailyTimes.length === 0)) {
+        task.dailyTimes = ['11:00'];
+      }
+      updateTask(id, { scheduleType, dailyTimes: task.dailyTimes || [] });
+      renderFullUI();
+    });
+  });
+
+  document.querySelectorAll('.daily-times-input').forEach(el => {
+    el.addEventListener('change', (e) => {
+      const id = el.dataset.id;
+      const dailyTimes = normalizeDailyTimes(e.target.value);
+      e.target.value = dailyTimes.join(', ');
+      updateTask(id, { dailyTimes, scheduleType: dailyTimes.length > 0 ? 'daily' : 'interval' });
+      renderFullUI();
+    });
+  });
+
+  document.querySelectorAll('.preset-btn[data-val]').forEach(el => {
     el.addEventListener('click', () => {
       const val = parseInt(el.dataset.val);
       updateTask(el.dataset.id, { interval: val });
@@ -1449,7 +1891,7 @@ function bindEvents() {
   });
 
   // 任务级别的锁屏时长输入框
-  document.querySelectorAll('.lock-input:not(.pre-notify-input)').forEach(el => {
+  document.querySelectorAll('.lock-duration-input').forEach(el => {
     el.addEventListener('input', (e) => {
       const id = el.dataset.id;
       const task = settings.tasks.find(t => t.id === id);
@@ -1509,8 +1951,45 @@ function bindEvents() {
   }
   
   document.getElementById('testSoundBtn').onclick = () => {
-    invoke('play_notification_sound').catch(e => console.error('Sound invoke failed:', e));
+    if (settings.customSoundPath) {
+      invoke('test_custom_sound', { filePath: settings.customSoundPath })
+        .catch(err => {
+          console.error('Failed to test custom sound:', err);
+          showMessage('warning', t('notification.soundFailed'));
+        });
+    } else {
+      playReminderSound();
+    }
   };
+
+  const selectCustomSoundBtn = document.getElementById('selectCustomSoundBtn');
+  if (selectCustomSoundBtn) {
+    selectCustomSoundBtn.addEventListener('click', async () => {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        filters: [{
+          name: 'Audio',
+          extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'wma']
+        }]
+      });
+      const audioPath = extractDialogPath(selected);
+      if (audioPath) {
+        settings.customSoundPath = audioPath;
+        saveSettings();
+        renderFullUI();
+      }
+    });
+  }
+
+  const clearCustomSoundBtn = document.getElementById('clearCustomSoundBtn');
+  if (clearCustomSoundBtn) {
+    clearCustomSoundBtn.addEventListener('click', () => {
+      settings.customSoundPath = '';
+      saveSettings();
+      renderFullUI();
+    });
+  }
 
   const unlockBtn = document.getElementById('unlockBtn');
   if (unlockBtn) {
@@ -1600,6 +2079,36 @@ function bindEvents() {
     });
   }
 
+  const floatingModeSelect = document.getElementById('floatingModeSelect');
+  if (floatingModeSelect) {
+    floatingModeSelect.addEventListener('change', (e) => {
+      settings.floatingWindowMode = e.target.value;
+      floatingCountdownNotified = false;
+      saveSettings();
+      syncFloatingWindow();
+      renderFullUI();
+    });
+  }
+
+  const floatingCountdownTitleInput = document.getElementById('floatingCountdownTitleInput');
+  if (floatingCountdownTitleInput) {
+    floatingCountdownTitleInput.addEventListener('change', (e) => {
+      settings.floatingCountdownTitle = e.target.value.trim() || t('floating.customTitle');
+      saveSettings();
+      syncFloatingWindow();
+    });
+  }
+
+  const floatingCountdownTargetInput = document.getElementById('floatingCountdownTargetInput');
+  if (floatingCountdownTargetInput) {
+    floatingCountdownTargetInput.addEventListener('change', (e) => {
+      settings.floatingCountdownTarget = e.target.value;
+      floatingCountdownNotified = false;
+      saveSettings();
+      syncFloatingWindow();
+    });
+  }
+
   const selectBgImageBtn = document.getElementById('selectBgImageBtn');
   if (selectBgImageBtn) {
     selectBgImageBtn.addEventListener('click', async () => {
@@ -1611,14 +2120,11 @@ function bindEvents() {
         }]
       });
       
-      if (selected) {
-        // Tauri v2 dialog returns FilePath object, extract the path string
-        const imagePath = typeof selected === 'string' ? selected : selected.path;
-        if (imagePath) {
-          settings.lockScreenBgImage = imagePath;
-          saveSettings();
-          renderFullUI();
-        }
+      const imagePath = extractDialogPath(selected);
+      if (imagePath) {
+        settings.lockScreenBgImage = imagePath;
+        saveSettings();
+        renderFullUI();
       }
     });
   }

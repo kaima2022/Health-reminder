@@ -42,6 +42,7 @@ export default {
     minutes: 'min',
     seconds: 'sec',
     times: 'times',
+    daily: 'daily',
   },
 
   // Buttons
@@ -60,6 +61,9 @@ export default {
     selectBg: 'Select Image',
     changeBg: 'Change Image',
     clear: 'Clear',
+    selectSound: 'Select Audio',
+    changeSound: 'Change Audio',
+    clearSound: 'Use Default',
   },
 
   // Lock screen
@@ -98,7 +102,22 @@ export default {
     maxSnoozeCount: 'Max Snooze Count',
     maxSnoozeCountDesc: 'Maximum consecutive snoozes allowed after task triggers',
     sound: 'Notification Sound',
+    soundDesc: 'Play a sound when reminders trigger',
+    customSound: 'Custom Sound',
+    customSoundDesc: 'Select a local audio file for reminders',
     autoStart: 'Start on Boot',
+    autoStartDesc: 'Start the app when you sign in',
+    silentAutoStart: 'Silent Auto Start',
+    silentAutoStartDesc: 'Hide directly to tray on boot',
+    floatingWindow: 'Floating Window',
+    floatingWindowDesc: 'Show a compact always-on-top countdown',
+    floatingMode: 'Floating Mode',
+    floatingModeDesc: 'Show next reminder or a custom countdown',
+    floatingModeNext: 'Next Reminder',
+    floatingModeCustom: 'Custom Countdown',
+    floatingCustom: 'Custom Countdown',
+    floatingCustomDesc: 'Set the floating title and target time',
+    floatingTitlePlaceholder: 'E.g. Sale starts',
     version: 'Version Update',
     currentVersion: 'Current version v1.6.2',
     newVersion: 'Current version v1.6.2 (New version v{version} available)',
@@ -112,6 +131,10 @@ export default {
   // Task card
   taskCard: {
     preNotify: 'Pre-notify',
+    schedule: 'Schedule',
+    intervalSchedule: 'Interval',
+    dailySchedule: 'Daily',
+    dailyTimes: 'Times',
     allowSnooze: 'Allow snooze',
     lockDuration: 'Lock duration',
     clickToReset: 'Click to reset',
@@ -137,6 +160,21 @@ export default {
   notification: {
     preNotifyTitle: 'Upcoming: {title}',
     preNotifyBody: 'Reminder will trigger in {seconds} seconds, get ready.',
+    permissionDenied: 'System notification permission is off; using in-app fallback',
+    fallback: 'System notification failed; using in-app fallback',
+    soundFailed: 'Sound playback failed; the reminder will continue',
+  },
+
+  // Floating window
+  floating: {
+    nextReminder: 'Next Reminder',
+    customCountdown: 'Custom Countdown',
+    customTitle: 'Countdown',
+    noTarget: 'No target time set',
+    done: 'Target time reached',
+    toggleMode: 'Toggle mode',
+    openMain: 'Open main window',
+    hide: 'Hide floating window',
   },
 
   // Update

@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.6.1-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.0-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -97,6 +97,8 @@
 - **多任务并行**：久坐、喝水、护眼，想提醒什么就开什么，互不冲突。
 - **一键设置**：所有设置就在卡片上，点一下小齿轮就能改时间，不用去复杂的菜单里找。
 - **轻量安静**：平时它就安静地待在托盘里，占用资源极低，几乎感觉不到它的存在。
+- **静默自启与悬浮窗**：开机后可直接隐藏到托盘，也可以打开置顶悬浮倒计时查看下一个提醒或自定义目标时间。
+- **定点提醒**：自定义任务支持每天多个固定时间点提醒，例如 11:00 运动、21:00 泡脚。
 
 ---
 
@@ -159,7 +161,7 @@ npm run tauri build
 ## 后续路线图
 
 - [ ] 数据统计视图：查看周/月健康达成率。
-- [ ] 更多系统音效：支持自定义上传提醒音。
+- [x] 更多系统音效：支持自定义上传提醒音。
 - [ ] 专注模式联动：在电脑全屏工作或游戏时智能静默。
 
 ## 版本记录
@@ -170,6 +172,16 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.7.0 (待发布)
+- **悬浮窗**：新增置顶倒计时小窗，可显示下一个提醒或自定义目标时间。
+- **定点提醒**：自定义任务支持每天多个 `HH:mm` 时间点。
+
+### v1.6.2 (维护版)
+- **自定义提示音**：支持选择本地音频作为提醒音，并保留默认系统提示音兜底。
+- **静默自启**：开机自启可直接隐藏到托盘，减少启动打扰。
+- **通知诊断**：系统通知失败时不再静默失败，会回退到应用内提醒。
+- **发布链路**：统一更新器、Scoop manifest 与文档链接到 `kaima2022/Health-reminder`。
 
 ### v1.6.1 (2026-02-04)
 - **暗夜配色**：优化暗色主题配色与对比度，夜间使用更舒适。

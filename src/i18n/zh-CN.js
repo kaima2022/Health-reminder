@@ -42,6 +42,7 @@ export default {
     minutes: '分钟',
     seconds: '秒',
     times: '次',
+    daily: '定点',
   },
 
   // 按钮
@@ -60,6 +61,9 @@ export default {
     selectBg: '选择图片',
     changeBg: '更换图片',
     clear: '清除',
+    selectSound: '选择音频',
+    changeSound: '更换音频',
+    clearSound: '使用默认',
   },
 
   // 锁屏
@@ -98,7 +102,22 @@ export default {
     maxSnoozeCount: '最大推迟次数',
     maxSnoozeCountDesc: '任务触发后允许连续推迟的次数',
     sound: '提示音',
+    soundDesc: '提醒时播放声音',
+    customSound: '自定义提示音',
+    customSoundDesc: '选择本地音频文件作为提示音',
     autoStart: '开机自启动',
+    autoStartDesc: '登录系统后自动启动应用',
+    silentAutoStart: '静默自启',
+    silentAutoStartDesc: '开机自启时直接隐藏到托盘',
+    floatingWindow: '悬浮窗',
+    floatingWindowDesc: '显示置顶倒计时小窗',
+    floatingMode: '悬浮窗模式',
+    floatingModeDesc: '显示下个提醒或自定义倒计时',
+    floatingModeNext: '下个提醒',
+    floatingModeCustom: '自定义倒计时',
+    floatingCustom: '自定义倒计时',
+    floatingCustomDesc: '设置悬浮窗标题与目标时间',
+    floatingTitlePlaceholder: '例如：秒杀开始',
     version: '版本更新',
     currentVersion: '当前版本 v1.6.2',
     newVersion: '当前版本 v1.6.2（有新版本 v{version}）',
@@ -112,6 +131,10 @@ export default {
   // 任务卡片
   taskCard: {
     preNotify: '预告',
+    schedule: '调度',
+    intervalSchedule: '间隔',
+    dailySchedule: '定点',
+    dailyTimes: '时间点',
     allowSnooze: '允许推迟',
     lockDuration: '锁屏时长',
     clickToReset: '点击重置',
@@ -137,6 +160,21 @@ export default {
   notification: {
     preNotifyTitle: '即将提醒：{title}',
     preNotifyBody: '还有 {seconds} 秒将触发提醒，请做好准备。',
+    permissionDenied: '系统通知权限未开启，已使用应用内提醒兜底',
+    fallback: '系统通知发送失败，已使用应用内提醒兜底',
+    soundFailed: '提示音播放失败，将继续使用默认提醒',
+  },
+
+  // 悬浮窗
+  floating: {
+    nextReminder: '下个提醒',
+    customCountdown: '自定义倒计时',
+    customTitle: '秒杀倒计时',
+    noTarget: '未设置目标时间',
+    done: '目标时间到了',
+    toggleMode: '切换模式',
+    openMain: '打开主窗口',
+    hide: '隐藏悬浮窗',
   },
 
   // 更新

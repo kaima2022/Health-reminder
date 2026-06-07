@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.6.1-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.0-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -96,6 +96,8 @@ In today's fast-paced digital era, a healthy body is the cornerstone of high pro
 - **Parallel Multi-tasking**: Sitting, drinking water, eye rest - enable whatever reminders you want, they don't conflict.
 - **One-click Settings**: All settings are right on the card, click the gear icon to change times, no need to dig through complex menus.
 - **Lightweight and Silent**: It quietly sits in the tray, using minimal resources, barely noticeable.
+- **Silent boot and floating window**: Start hidden in the tray on boot, or keep a compact always-on-top countdown visible.
+- **Daily reminders**: Custom tasks can trigger at multiple fixed `HH:mm` times, such as 11:00 exercise and 21:00 foot bath.
 
 ---
 
@@ -158,7 +160,7 @@ npm run tauri build
 ## Roadmap
 
 - [ ] Statistics View: View weekly/monthly health achievement rates.
-- [ ] More System Sounds: Support custom upload of reminder sounds.
+- [x] More System Sounds: Support custom upload of reminder sounds.
 - [ ] Focus Mode Integration: Smart silent mode when computer is in fullscreen work or gaming.
 
 ## Version History
@@ -169,6 +171,16 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.7.0 (Pending release)
+- **Floating window**: Added a compact always-on-top countdown for the next reminder or a custom target time.
+- **Daily reminders**: Custom tasks support multiple daily `HH:mm` trigger times.
+
+### v1.6.2 (Maintenance)
+- **Custom notification sound**: Select a local audio file while keeping the system sound fallback.
+- **Silent auto start**: Boot startup can hide directly to the tray.
+- **Notification diagnostics**: System notification failures now fall back to in-app reminders instead of failing silently.
+- **Release links**: Updater, Scoop manifest, and docs now consistently use `kaima2022/Health-reminder`.
 
 ### v1.6.1 (2026-02-04)
 - **Dark theme palette**: Improved dark theme colors and contrast for better night use.
