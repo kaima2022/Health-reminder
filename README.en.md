@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.0-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.1-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -183,6 +183,9 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.7.1 (2026-06-10)
+- **Paused timer fix**: Fixed daily scheduled tasks whose floating-window remaining time could keep changing or grow unexpectedly while globally paused, paused per task, system-locked, or inside the app lock screen. The remaining time now freezes during pause and resumes normal scheduling afterward.
 
 ### v1.7.0 (2026-06-07)
 - **Floating countdown window** ([#12](https://github.com/kaima2022/Health-reminder/issues/12), [#16](https://github.com/kaima2022/Health-reminder/issues/16)): Added a compact always-on-top pill window for the next health reminder or a custom target countdown.

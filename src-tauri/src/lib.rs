@@ -304,6 +304,22 @@ fn daily_remaining_seconds(task: &TaskConfig) -> u64 {
     best.unwrap_or(task.interval.saturating_mul(60) as u32) as u64
 }
 
+fn freeze_daily_timer(timer: &mut TaskTimer, now: Instant) {
+    if timer.config.enabled
+        && timer.disabled_at.is_none()
+        && !timer.snoozed
+        && is_daily_task(&timer.config)
+    {
+        timer.reset_time = now + Duration::from_secs(daily_remaining_seconds(&timer.config));
+    }
+}
+
+fn freeze_active_daily_timers(state: &mut TimerState, now: Instant) {
+    for timer in state.tasks.values_mut() {
+        freeze_daily_timer(timer, now);
+    }
+}
+
 #[cfg(target_os = "windows")]
 static SYSTEM_LOCKED: AtomicBool = AtomicBool::new(false);
 
@@ -564,8 +580,10 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
 fn timer_pause() {
     let mut state = get_timer_state().lock().unwrap();
     if !state.paused {
+        let now = Instant::now();
+        freeze_active_daily_timers(&mut state, now);
         state.paused = true;
-        state.pause_start = Some(Instant::now());
+        state.pause_start = Some(now);
     }
 }
 
@@ -600,6 +618,7 @@ fn timer_pause_task(task_id: String) {
     let now = Instant::now();
     if let Some(timer) = state.tasks.get_mut(&task_id) {
         if timer.config.enabled && timer.disabled_at.is_none() {
+            freeze_daily_timer(timer, now);
             timer.disabled_at = Some(now);
         }
     }
@@ -699,7 +718,14 @@ fn get_countdowns() -> Vec<CountdownInfo> {
                 .map(|duration| duration.as_secs())
                 .unwrap_or(0)
         } else if is_daily {
-            daily_remaining_seconds(&timer.config)
+            if timer.disabled_at.is_some() || state.paused || state.system_locked || state.lock_screen_active {
+                timer.reset_time
+                    .checked_duration_since(effective_now)
+                    .map(|duration| duration.as_secs())
+                    .unwrap_or(0)
+            } else {
+                daily_remaining_seconds(&timer.config)
+            }
         } else if timer.reset_time > effective_now {
             let wait_time = timer.reset_time.duration_since(effective_now).as_secs();
             total_secs + wait_time
@@ -740,6 +766,7 @@ fn timer_set_system_locked(locked: bool) {
 
     if locked && !state.system_locked {
         // 刚锁屏，记录暂停时间
+        freeze_active_daily_timers(&mut state, now);
         state.system_locked = true;
         if state.pause_start.is_none() {
             state.pause_start = Some(now);
@@ -779,8 +806,10 @@ fn timer_set_lock_screen_active(active: bool) {
     let mut state = get_timer_state().lock().unwrap();
     if active && !state.lock_screen_active {
         // 刚进入锁屏模式，记录开始时间
+        let now = Instant::now();
+        freeze_active_daily_timers(&mut state, now);
         state.lock_screen_active = true;
-        state.lock_screen_start = Some(Instant::now());
+        state.lock_screen_start = Some(now);
     } else if !active && state.lock_screen_active {
         // 退出锁屏模式，补偿锁屏期间的时间
         if let Some(lock_start) = state.lock_screen_start {

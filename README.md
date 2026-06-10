@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.0-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.1-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -184,6 +184,9 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.7.1 (2026-06-10)
+- **暂停计时修复**：修复 daily 定点任务在全局暂停、单任务暂停、系统锁屏或应用锁屏期间，悬浮窗剩余时间可能继续变化甚至异常增加的问题；暂停期间会冻结当前剩余时间，恢复后再回到正常调度。
 
 ### v1.7.0 (2026-06-07)
 - **悬浮窗倒计时**（[#12](https://github.com/kaima2022/Health-reminder/issues/12)、[#16](https://github.com/kaima2022/Health-reminder/issues/16)）：新增置顶椭圆形悬浮窗，可显示下一个健康提醒或自定义目标倒计时。
