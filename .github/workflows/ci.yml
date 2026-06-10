@@ -30,3 +30,7 @@ jobs:
       - name: Check Tauri backend
         working-directory: src-tauri
         run: cargo check
+
+      - name: Test Tauri backend
+        working-directory: src-tauri
+        run: cargo test
