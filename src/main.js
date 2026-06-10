@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getVersion } from '@tauri-apps/api/app';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification';
 import { check } from '@tauri-apps/plugin-updater';
@@ -97,6 +98,7 @@ let floatingWindowVisibleBeforeLock = false;
 let floatingCountdownNotified = false;
 let isLockSlaveWindow = false;
 let floatingTaskMenuOpen = false;
+let appVersion = '1.7.2';
 
 let domCache = null;
 let isUiSuspended = false;
@@ -110,6 +112,14 @@ const GENERATED_TASK_DESC_VALUES = [
   'Another energetic day, remember to take breaks~',
   '又是充满活力的一天，记得休息哦~'
 ];
+
+async function loadAppVersion() {
+  try {
+    appVersion = await getVersion();
+  } catch (e) {
+    console.warn('Failed to load app version, using fallback', e);
+  }
+}
 
 function getFloatingThemeLabel(theme) {
   const label = t(`floating.theme.${theme}`);
@@ -437,6 +447,7 @@ window.__HEALTH_REMINDER_HANDLE_TRIGGER__ = (task) => {
 
 async function init() {
   applyTheme(settings.theme); // 在加载设置后立即应用主题
+  await loadAppVersion();
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('mode') === 'floating') {
     document.body.classList.add('floating-mode');
@@ -1660,7 +1671,7 @@ function renderFullUI() {
         <div class="setting-row">
           <div class="setting-info">
             <label>${t('settings.version')}</label>
-            <span class="setting-desc">${updateInfo ? t('settings.newVersion', { version: updateInfo.version }) : t('settings.currentVersion')}</span>
+            <span class="setting-desc">${updateInfo ? t('settings.newVersion', { currentVersion: appVersion, version: updateInfo.version }) : t('settings.currentVersion', { version: appVersion })}</span>
           </div>
           <button class="check-update-btn" id="checkUpdateBtn" ${isCheckingUpdate ? 'disabled' : ''}>
             ${isCheckingUpdate ? '<span class="spinner"></span> ' + t('buttons.checking') : (updateInfo ? t('buttons.updateNow') : t('buttons.checkUpdate'))}
@@ -1766,7 +1777,7 @@ function renderFullUI() {
       </div>
     </div>
 
-    <div class="footer">${t('app.footer')}</div>
+    <div class="footer">${t('app.footer', { version: appVersion })}</div>
 
     ${showIdleResetBanner ? `
     <div class="idle-reset-banner">

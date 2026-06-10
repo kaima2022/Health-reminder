@@ -100,6 +100,7 @@ jobs:
             - Silent auto-start and tray-first startup support.
             - Floating countdown window and daily fixed-time reminders.
             - Fixed paused daily countdown display in the floating window.
+            - In-app version display now follows Tauri app metadata.
             - Improved notification fallback and release links.
 
             Download the package that matches your platform below.
