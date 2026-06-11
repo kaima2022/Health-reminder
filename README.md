@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.3-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.4-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -184,6 +184,10 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.7.4 (2026-06-11)
+- **发布流程修复**：Release workflow 改为先统一创建 GitHub Release，再让各平台上传资产，避免并发构建抢占创建同一个 release 导致部分平台失败。
+- **包含 v1.7.3 暂停倒计时修复**：悬浮窗暂停后剩余时间会保持冻结，不再异常增加。
 
 ### v1.7.3 (2026-06-11)
 - **暂停倒计时冻结修复**：统一后端全局暂停、单任务暂停、锁屏和空闲状态的冻结逻辑，修复 interval 任务在悬浮窗暂停后剩余时间仍可能异常增加的问题。

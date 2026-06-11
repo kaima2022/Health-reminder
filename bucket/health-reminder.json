@@ -1,12 +1,12 @@
 {
   "$schema": "https://raw.githubusercontent.com/ScoopInstaller/Scoop/master/schema.json",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "description": "Health Reminder - A minimalist, precise and efficient health guardian app.",
   "homepage": "https://github.com/kaima2022/Health-reminder",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/kaima2022/Health-reminder/releases/download/v1.7.3/health-reminder_1.7.3_x64-setup.exe",
+      "url": "https://github.com/kaima2022/Health-reminder/releases/download/v1.7.4/health-reminder_1.7.4_x64-setup.exe",
       "hash": "34480b120a6bff294c3c766ca21cc5d8533168f73c29fe920e69cab1b2f0f4da"
     }
   },
