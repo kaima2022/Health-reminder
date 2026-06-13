@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.4-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.5-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -185,25 +185,12 @@ npm run tauri build
 > #### scoop 更新命令
 > scoop update health-reminder
 
-### v1.7.4 (2026-06-11)
-- **发布流程修复**：Release workflow 改为先统一创建 GitHub Release，再让各平台上传资产，避免并发构建抢占创建同一个 release 导致部分平台失败。
-- **包含 v1.7.3 暂停倒计时修复**：悬浮窗暂停后剩余时间会保持冻结，不再异常增加。
-
-### v1.7.3 (2026-06-11)
-- **暂停倒计时冻结修复**：统一后端全局暂停、单任务暂停、锁屏和空闲状态的冻结逻辑，修复 interval 任务在悬浮窗暂停后剩余时间仍可能异常增加的问题。
-- **悬浮窗状态同步**：暂停、恢复、重置后立即从后端刷新倒计时，避免显示旧值或延迟一秒才稳定。
-
-### v1.7.2 (2026-06-10)
-- **版本显示修复**：设置页和页脚不再使用硬编码版本号，改为从 Tauri 应用元数据读取当前版本，避免发布版本与软件内显示不一致。
-
-### v1.7.1 (2026-06-10)
-- **暂停计时修复**：修复 daily 定点任务在全局暂停、单任务暂停、系统锁屏或应用锁屏期间，悬浮窗剩余时间可能继续变化甚至异常增加的问题；暂停期间会冻结当前剩余时间，恢复后再回到正常调度。
-
-### v1.7.0 (2026-06-07)
-- **悬浮窗倒计时**（[#12](https://github.com/kaima2022/Health-reminder/issues/12)、[#16](https://github.com/kaima2022/Health-reminder/issues/16)）：新增置顶椭圆形悬浮窗，可显示下一个健康提醒或自定义目标倒计时。
-- **悬浮窗任务选择与单任务暂停**（[#16](https://github.com/kaima2022/Health-reminder/issues/16)）：下拉图标可展开任务列表，支持切换当前显示任务；暂停/恢复只作用于当前任务，默认模式仍优先显示最近可触发任务。
+### v1.7.0 系列 (2026-06-07 ~ 2026-06-13)
+- **悬浮窗倒计时**（[#12](https://github.com/kaima2022/Health-reminder/issues/12)、[#16](https://github.com/kaima2022/Health-reminder/issues/16)）：新增置顶椭圆形悬浮窗，可显示下一个健康提醒或自定义目标倒计时，并支持蓝色、绿色、青色、深色主题。
+- **悬浮窗任务控制**（[#16](https://github.com/kaima2022/Health-reminder/issues/16)）：下拉图标可展开任务列表，支持切换当前显示任务；暂停/恢复只作用于当前任务，默认模式会提示最近可触发任务。
+- **暂停倒计时冻结修复**：统一后端全局暂停、单任务暂停、系统锁屏、应用锁屏和空闲状态的冻结逻辑，悬浮窗暂停后剩余时间保持稳定，不再异常增加。
 - **定点提醒**（[#15](https://github.com/kaima2022/Health-reminder/issues/15)）：自定义任务支持 `interval` 与 `daily` 两种调度，daily 可配置多个 `HH:mm` 时间点。
-- **体验修复**（[#13](https://github.com/kaima2022/Health-reminder/issues/13)、[#14](https://github.com/kaima2022/Health-reminder/issues/14)）：修复推迟计时少一分钟、暗夜模式下拉栏、语言切换后提醒文案、通知兜底和悬浮窗主窗口按钮等遗留问题。
+- **体验与发布链路修复**（[#13](https://github.com/kaima2022/Health-reminder/issues/13)、[#14](https://github.com/kaima2022/Health-reminder/issues/14)）：修复推迟计时少一分钟、暗夜模式下拉栏、语言切换后提醒文案、通知兜底、悬浮窗主窗口按钮、版本显示、Release 构建并发和检查更新错误提示不可见等问题。
 
 ### v1.6.2 (维护版)
 - **自定义提示音**（[PR #10](https://github.com/kaima2022/Health-reminder/pull/10)）：支持选择本地音频作为提醒音，并保留默认系统提示音兜底。

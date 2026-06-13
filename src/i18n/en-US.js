@@ -196,6 +196,7 @@ export default {
     updating: 'Updating...',
     upToDate: 'Already up to date!',
     checkFailed: 'Update check failed: {error}',
+    installFailed: 'Update install failed: {error}',
     networkError: 'Network error, please try again later',
   },
 

@@ -98,7 +98,7 @@ let floatingWindowVisibleBeforeLock = false;
 let floatingCountdownNotified = false;
 let isLockSlaveWindow = false;
 let floatingTaskMenuOpen = false;
-let appVersion = '1.7.2';
+let appVersion = '1.7.5';
 
 let domCache = null;
 let isUiSuspended = false;
@@ -119,6 +119,40 @@ async function loadAppVersion() {
   } catch (e) {
     console.warn('Failed to load app version, using fallback', e);
   }
+}
+
+function normalizeErrorMessage(error, fallback) {
+  let message = '';
+
+  if (typeof error === 'string') {
+    message = error;
+  } else if (error?.response?.data) {
+    message = normalizeErrorMessage(error.response.data, fallback);
+  } else if (error?.message) {
+    message = normalizeErrorMessage(error.message, fallback);
+  } else if (error) {
+    try {
+      message = JSON.stringify(error);
+    } catch (_) {
+      message = String(error);
+    }
+  }
+
+  message = String(message || '').trim();
+  if (!message || message === '{}' || message === '[object Object]') {
+    return fallback;
+  }
+
+  return message.length > 220 ? `${message.slice(0, 220)}...` : message;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function getFloatingThemeLabel(theme) {
@@ -741,7 +775,7 @@ async function checkForUpdates(manual = false) {
   } catch (e) {
     console.error('Update check failed:', e);
     if (manual) {
-      const errorMsg = e?.response?.data || e?.message || t('update.networkError');
+      const errorMsg = normalizeErrorMessage(e, t('update.networkError'));
       updateMessage = { type: 'error', text: t('update.checkFailed', { error: errorMsg }) };
       renderFullUI();
       setTimeout(() => {
@@ -761,6 +795,7 @@ async function performUpdate() {
   if (!updateInfo || isUpdating) return;
   
   isUpdating = true;
+  updateMessage = null;
   renderFullUI();
   
   try {
@@ -769,7 +804,13 @@ async function performUpdate() {
   } catch (e) {
     console.error('Update failed:', e);
     isUpdating = false;
+    const errorMsg = normalizeErrorMessage(e, t('update.networkError'));
+    updateMessage = { type: 'error', text: t('update.installFailed', { error: errorMsg }) };
     renderFullUI();
+    setTimeout(() => {
+      updateMessage = null;
+      renderFullUI();
+    }, 5000);
   }
 }
 
@@ -1699,7 +1740,7 @@ function renderFullUI() {
     <div class="toast-message ${updateMessage.type === 'error' ? 'error' : 'success'}">
       <div class="toast-content">
         <span class="toast-icon">${updateMessage.type === 'error' ? '❌' : '✅'}</span>
-        <span class="toast-text">${updateMessage.text}</span>
+        <span class="toast-text">${escapeHtml(updateMessage.text)}</span>
       </div>
     </div>
     ` : ''}
@@ -1708,7 +1749,7 @@ function renderFullUI() {
     <div class="toast-message ${notificationMessage.type}">
       <div class="toast-content">
         <span class="toast-icon">${notificationMessage.type === 'warning' ? '!' : 'i'}</span>
-        <span class="toast-text">${notificationMessage.text}</span>
+        <span class="toast-text">${escapeHtml(notificationMessage.text)}</span>
       </div>
     </div>
     ` : ''}

@@ -1166,13 +1166,16 @@ body {
   bottom: 100px;
   left: 50%;
   transform: translateX(-50%) translateY(20px);
-  background: white;
+  background: var(--bg-card);
+  color: var(--text);
   padding: 12px 20px;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
   z-index: 950;
   opacity: 0;
   animation: toastFadeIn 0.3s ease forwards;
+  max-width: min(340px, calc(100vw - 48px));
 }
 
 .toast-message.error {
@@ -1207,7 +1210,7 @@ body {
 
 .toast-content {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
@@ -1217,8 +1220,10 @@ body {
 
 .toast-text {
   font-size: 0.875rem;
-  color: var(--text);
+  color: currentColor;
   font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 .floating-theme-swatches {

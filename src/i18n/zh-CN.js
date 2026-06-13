@@ -196,6 +196,7 @@ export default {
     updating: '正在更新...',
     upToDate: '已是最新版本！',
     checkFailed: '检查更新失败：{error}',
+    installFailed: '更新安装失败：{error}',
     networkError: '网络错误，请稍后重试',
   },
 

@@ -38,6 +38,7 @@ jobs:
           - Floating countdown window and daily fixed-time reminders.
           - Paused floating countdowns now freeze consistently across global pause, per-task pause, lock screen, and idle state.
           - In-app version display now follows Tauri app metadata.
+          - Update check failures now show readable error text in both light and dark themes.
           - Improved notification fallback and release links.
 
           Download the package that matches your platform below.

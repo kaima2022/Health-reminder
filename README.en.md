@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.4-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.5-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -184,25 +184,12 @@ npm run tauri build
 > #### Scoop update command
 > scoop update health-reminder
 
-### v1.7.4 (2026-06-11)
-- **Release pipeline fix**: The release workflow now creates the GitHub Release once before platform builds upload assets, avoiding concurrent release creation failures.
-- **Includes the v1.7.3 paused countdown fix**: Floating-window countdowns stay frozen while paused instead of growing unexpectedly.
-
-### v1.7.3 (2026-06-11)
-- **Paused countdown freeze fix**: Unified backend freeze handling for global pause, per-task pause, system lock, app lock screen, and idle state, fixing interval tasks whose floating-window remaining time could still grow unexpectedly while paused.
-- **Floating window state sync**: Pause, resume, and reset now refresh countdowns from the backend immediately, avoiding stale values or a one-second delay before the display stabilizes.
-
-### v1.7.2 (2026-06-10)
-- **Version display fix**: The settings page and footer now read the current version from Tauri app metadata instead of hard-coded text, keeping the in-app version aligned with releases.
-
-### v1.7.1 (2026-06-10)
-- **Paused timer fix**: Fixed daily scheduled tasks whose floating-window remaining time could keep changing or grow unexpectedly while globally paused, paused per task, system-locked, or inside the app lock screen. The remaining time now freezes during pause and resumes normal scheduling afterward.
-
-### v1.7.0 (2026-06-07)
-- **Floating countdown window** ([#12](https://github.com/kaima2022/Health-reminder/issues/12), [#16](https://github.com/kaima2022/Health-reminder/issues/16)): Added a compact always-on-top pill window for the next health reminder or a custom target countdown.
-- **Floating task picker and per-task pause** ([#16](https://github.com/kaima2022/Health-reminder/issues/16)): The chevron opens a task picker, and pause/resume now applies only to the currently displayed task while the default mode still prioritizes the nearest active reminder.
+### v1.7.0 Series (2026-06-07 ~ 2026-06-13)
+- **Floating countdown window** ([#12](https://github.com/kaima2022/Health-reminder/issues/12), [#16](https://github.com/kaima2022/Health-reminder/issues/16)): Added a compact always-on-top pill window for the next health reminder or a custom target countdown, with blue, green, teal, and dark themes.
+- **Floating task control** ([#16](https://github.com/kaima2022/Health-reminder/issues/16)): The chevron opens a task picker, pause/resume applies only to the currently displayed task, and the default mode still surfaces the nearest active reminder.
+- **Paused countdown freeze fix**: Unified backend freeze handling for global pause, per-task pause, system lock, app lock screen, and idle state so floating-window countdowns stay stable while paused.
 - **Daily reminders** ([#15](https://github.com/kaima2022/Health-reminder/issues/15)): Custom tasks now support both `interval` and `daily` schedules, with multiple daily `HH:mm` trigger times.
-- **Experience fixes** ([#13](https://github.com/kaima2022/Health-reminder/issues/13), [#14](https://github.com/kaima2022/Health-reminder/issues/14)): Fixed snooze time drift, dark-mode dropdown styling, stale reminder language after switching locale, notification fallback, and the floating open-main-window action.
+- **Experience and release fixes** ([#13](https://github.com/kaima2022/Health-reminder/issues/13), [#14](https://github.com/kaima2022/Health-reminder/issues/14)): Fixed snooze countdown rounding, dark-mode dropdowns, reminder copy after language switches, notification fallback, the floating-window main-window button, version display, concurrent release builds, and unreadable update-check error toasts.
 
 ### v1.6.2 (Maintenance)
 - **Custom notification sound** ([PR #10](https://github.com/kaima2022/Health-reminder/pull/10)): Select a local audio file while keeping the system sound fallback.
