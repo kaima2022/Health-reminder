@@ -184,12 +184,14 @@ npm run tauri build
 > #### Scoop update command
 > scoop update health-reminder
 
-### v1.7.0 Series (2026-06-07 ~ 2026-06-13)
+### v1.7.5 (2026-06-13)
+- **v1.7 stability maintenance**: Unified freeze handling for global pause, per-task pause, system lock, app lock screen, and idle state so floating-window countdowns stay stable while paused.
+- **Update and release experience fixes** ([#13](https://github.com/kaima2022/Health-reminder/issues/13), [#14](https://github.com/kaima2022/Health-reminder/issues/14)): Fixed snooze countdown rounding, dark-mode dropdowns, reminder copy after language switches, notification fallback, the floating-window main-window button, version display, concurrent release builds, and unreadable update-check error toasts.
+
+### v1.7.0 (2026-06-07)
 - **Floating countdown window** ([#12](https://github.com/kaima2022/Health-reminder/issues/12), [#16](https://github.com/kaima2022/Health-reminder/issues/16)): Added a compact always-on-top pill window for the next health reminder or a custom target countdown, with blue, green, teal, and dark themes.
 - **Floating task control** ([#16](https://github.com/kaima2022/Health-reminder/issues/16)): The chevron opens a task picker, pause/resume applies only to the currently displayed task, and the default mode still surfaces the nearest active reminder.
-- **Paused countdown freeze fix**: Unified backend freeze handling for global pause, per-task pause, system lock, app lock screen, and idle state so floating-window countdowns stay stable while paused.
 - **Daily reminders** ([#15](https://github.com/kaima2022/Health-reminder/issues/15)): Custom tasks now support both `interval` and `daily` schedules, with multiple daily `HH:mm` trigger times.
-- **Experience and release fixes** ([#13](https://github.com/kaima2022/Health-reminder/issues/13), [#14](https://github.com/kaima2022/Health-reminder/issues/14)): Fixed snooze countdown rounding, dark-mode dropdowns, reminder copy after language switches, notification fallback, the floating-window main-window button, version display, concurrent release builds, and unreadable update-check error toasts.
 
 ### v1.6.2 (Maintenance)
 - **Custom notification sound** ([PR #10](https://github.com/kaima2022/Health-reminder/pull/10)): Select a local audio file while keeping the system sound fallback.
