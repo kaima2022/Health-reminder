@@ -2,6 +2,32 @@
 
 This document lists all the locations where the application version number needs to be updated when releasing a new version.
 
+## Version Number Policy
+
+Health Reminder follows semantic versioning:
+
+| Version Part | Use When |
+|--------------|----------|
+| `MAJOR` | A release changes data/config compatibility or drops platform support. |
+| `MINOR` | A release adds user-facing features, such as a new reminder mode or floating-window capability. |
+| `PATCH` | A release fixes bugs, improves reliability, updates release tooling, or polishes existing behavior. |
+
+Documentation-only changes do not need a version bump or release tag.
+
+Never reuse an existing tag. If `v1.7.5` has a problem after release, fix it and publish `v1.7.6`.
+
+## Recommended Release Flow
+
+1. Decide whether the change is `MAJOR`, `MINOR`, or `PATCH`.
+2. Update all version files below.
+3. Update `README.md` and `README.en.md` changelog entries.
+4. Run `npm run build`.
+5. Run `cd src-tauri && cargo check`.
+6. Run `cd src-tauri && cargo test` when backend scheduling, pause, idle, lock-screen, or reminder logic changed.
+7. Commit the release prep changes.
+8. Tag the release with `vX.Y.Z` and push the tag.
+9. After GitHub Actions finishes, verify the GitHub Release assets, `latest.json`, and Scoop hash update.
+
 ## Configuration Files
 
 | File Path | Location / Key | Description |
