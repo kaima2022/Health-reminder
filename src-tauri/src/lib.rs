@@ -5,7 +5,7 @@ use std::io::BufReader;
 use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{
@@ -122,6 +122,30 @@ fn get_idle_seconds_linux() -> u64 {
 
 struct TrayState(Mutex<Option<TrayIcon>>);
 struct FloatingState(Mutex<bool>);
+
+#[derive(Clone, serde::Deserialize, serde::Serialize, Debug)]
+struct FloatingRevealRect {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Clone, serde::Deserialize, serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct FloatingRevealWatch {
+    edge: String,
+    restore: FloatingRevealRect,
+    monitor: FloatingRevealRect,
+    reveal_band: i32,
+}
+
+struct FloatingRevealInner {
+    generation: u64,
+    watch: Option<FloatingRevealWatch>,
+}
+
+struct FloatingRevealState(Arc<Mutex<FloatingRevealInner>>);
 
 struct LockStateInner {
     windows: Vec<String>,
@@ -1564,8 +1588,9 @@ fn ensure_floating_window(
         WebviewUrl::App(PathBuf::from("index.html?mode=floating")),
     )
     .title("Reminder")
-    .inner_size(320.0, 104.0)
-    .resizable(false)
+    .inner_size(260.0, 88.0)
+    .min_inner_size(180.0, 70.0)
+    .resizable(true)
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
@@ -1610,30 +1635,162 @@ fn hide_floating_window(app: AppHandle, state: State<FloatingState>) -> Result<(
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn get_global_cursor_position() -> Option<(i32, i32)> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    unsafe {
+        let mut point = POINT { x: 0, y: 0 };
+        if GetCursorPos(&mut point).is_ok() {
+            Some((point.x, point.y))
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_global_cursor_position() -> Option<(i32, i32)> {
+    None
+}
+
+fn cursor_should_reveal_floating(edge: &str, watch: &FloatingRevealWatch, cursor: (i32, i32)) -> bool {
+    let (cursor_x, cursor_y) = cursor;
+    let left = watch.monitor.x;
+    let top = watch.monitor.y;
+    let right = left + watch.monitor.width as i32;
+    let bottom = top + watch.monitor.height as i32;
+    let padding = watch.reveal_band.max(48);
+    let restore_left = watch.restore.x;
+    let restore_top = watch.restore.y;
+    let restore_right = restore_left + watch.restore.width as i32;
+    let restore_bottom = restore_top + watch.restore.height as i32;
+    let in_vertical = cursor_y >= restore_top - padding && cursor_y <= restore_bottom + padding;
+    let in_horizontal = cursor_x >= restore_left - padding && cursor_x <= restore_right + padding;
+
+    match edge {
+        "left" => cursor_x >= left - padding && cursor_x <= left + padding && in_vertical,
+        "right" => cursor_x >= right - padding && cursor_x <= right + padding && in_vertical,
+        "top" => cursor_y >= top - padding && cursor_y <= top + padding && in_horizontal,
+        "bottom" => cursor_y >= bottom - padding && cursor_y <= bottom + padding && in_horizontal,
+        _ => false,
+    }
+}
+
+fn reveal_floating_window_from_watch(app: &AppHandle, watch: &FloatingRevealWatch) {
+    if let Some(window) = app.get_webview_window("floating-window") {
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+            watch.restore.x,
+            watch.restore.y,
+        )));
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+            watch.restore.width,
+            watch.restore.height,
+        )));
+        let _ = window.show();
+        let _ = window.eval(
+            "window.__HEALTH_REMINDER_FLOATING_REVEALED__ && window.__HEALTH_REMINDER_FLOATING_REVEALED__();",
+        );
+    }
+    let _ = app.emit("floating-window-revealed", ());
+}
+
 #[tauri::command]
-fn set_floating_task_menu_open(app: AppHandle, open: bool) -> Result<(), String> {
+fn start_floating_reveal_watch(
+    app: AppHandle,
+    state: State<FloatingRevealState>,
+    watch: FloatingRevealWatch,
+) -> Result<(), String> {
+    let shared_state = state.0.clone();
+    let generation = {
+        let mut guard = shared_state.lock().unwrap();
+        guard.generation = guard.generation.wrapping_add(1);
+        guard.watch = Some(watch);
+        guard.generation
+    };
+    let app_for_thread = app.clone();
+
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_millis(80));
+            let current_watch = {
+                let guard = shared_state.lock().unwrap();
+                if guard.generation != generation {
+                    return;
+                }
+                guard.watch.clone()
+            };
+
+            let Some(watch) = current_watch else {
+                return;
+            };
+            let Some(cursor) = get_global_cursor_position() else {
+                continue;
+            };
+
+            if cursor_should_reveal_floating(&watch.edge, &watch, cursor) {
+                {
+                    let mut guard = shared_state.lock().unwrap();
+                    if guard.generation == generation {
+                        guard.watch = None;
+                    }
+                }
+                reveal_floating_window_from_watch(&app_for_thread, &watch);
+                return;
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_floating_reveal_watch(state: State<FloatingRevealState>) {
+    let mut guard = state.0.lock().unwrap();
+    guard.generation = guard.generation.wrapping_add(1);
+    guard.watch = None;
+}
+
+#[tauri::command]
+fn set_floating_task_menu_open(
+    app: AppHandle,
+    open: bool,
+    width: Option<f64>,
+    closed_height: Option<f64>,
+    open_height: Option<f64>,
+) -> Result<(), String> {
     let window = app
         .get_webview_window("floating-window")
         .ok_or_else(|| "floating window not found".to_string())?;
     let scale = window.scale_factor().unwrap_or(1.0);
-    let closed_height = (104.0 * scale).round() as u32;
-    let open_height = (196.0 * scale).round() as u32;
-    let target_height = if open { open_height } else { closed_height };
-    let target_width = (320.0 * scale).round() as u32;
+    let logical_width = width.unwrap_or(260.0).clamp(180.0, 420.0);
+    let logical_closed_height = closed_height.unwrap_or(88.0).clamp(70.0, 116.0);
+    let logical_open_height = open_height
+        .unwrap_or(logical_closed_height + 128.0)
+        .clamp(logical_closed_height, 320.0);
+    let target_height = if open {
+        (logical_open_height * scale).round() as u32
+    } else {
+        (logical_closed_height * scale).round() as u32
+    };
+    let target_width = (logical_width * scale).round() as u32;
     let current_size = window.outer_size().map_err(|e| e.to_string())?;
 
-    if current_size.height == target_height {
+    if current_size.height == target_height && current_size.width == target_width {
         return Ok(());
     }
 
     let current_position = window.outer_position().map_err(|e| e.to_string())?;
     let delta = target_height as i32 - current_size.height as i32;
-    window
-        .set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
-            current_position.x,
-            current_position.y - delta,
-        )))
-        .map_err(|e| e.to_string())?;
+    if delta != 0 {
+        window
+            .set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+                current_position.x,
+                current_position.y - delta,
+            )))
+            .map_err(|e| e.to_string())?;
+    }
     window
         .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
             target_width,
@@ -1862,6 +2019,8 @@ pub fn run() {
             is_main_window_visible,
             show_floating_window,
             hide_floating_window,
+            start_floating_reveal_watch,
+            stop_floating_reveal_watch,
             set_floating_task_menu_open,
             set_floating_window_always_on_top,
             update_tray_tooltip,
@@ -1887,6 +2046,12 @@ pub fn run() {
         ])
         .manage(TrayState(Mutex::new(None)))
         .manage(FloatingState(Mutex::new(false)))
+        .manage(FloatingRevealState(Arc::new(Mutex::new(
+            FloatingRevealInner {
+                generation: 0,
+                watch: None,
+            },
+        ))))
         .manage(LockState(Mutex::new(LockStateInner {
             windows: Vec::new(),
             args: None,

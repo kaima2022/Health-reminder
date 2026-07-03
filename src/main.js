@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow, currentMonitor, availableMonitors, cursorPosition, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification';
@@ -56,6 +56,13 @@ let settings = {
   floatingWindowEnabled: false,
   floatingWindowMode: 'nextReminder',
   floatingWindowTheme: 'blue',
+  floatingWindowWidth: 260,
+  floatingWindowFontScale: 100,
+  floatingWindowOpacity: 100,
+  floatingWindowBgColor: '#2f80ed',
+  floatingWindowBgColor2: '#56ccf2',
+  floatingWindowTextColor: '#ffffff',
+  floatingWindowAutoHide: false,
   floatingSelectedTaskId: '',
   floatingCountdownTitle: '秒杀倒计时',
   floatingCountdownTarget: '',
@@ -98,6 +105,17 @@ let floatingWindowVisibleBeforeLock = false;
 let floatingCountdownNotified = false;
 let isLockSlaveWindow = false;
 let floatingTaskMenuOpen = false;
+let floatingGeometrySyncing = false;
+let floatingWindowLifecycleBound = false;
+let floatingMoveTimer = null;
+let floatingResizeSaveTimer = null;
+let floatingAutoHideTimer = null;
+let floatingRevealPollTimer = null;
+let floatingEdgeWatchTimer = null;
+let floatingDragFrame = null;
+let floatingDragState = null;
+let floatingAutoHideState = { edge: null, hidden: false };
+let floatingPointerInside = false;
 let appVersion = '1.7.5';
 
 let domCache = null;
@@ -105,7 +123,21 @@ let isUiSuspended = false;
 let lastTrayTooltipText = '';
 let lastTrayTooltipUpdateAt = 0;
 const TRAY_TOOLTIP_MIN_INTERVAL_MS = 5000;
-const FLOATING_THEMES = ['blue', 'green', 'teal', 'slate'];
+const FLOATING_THEMES = ['blue', 'green', 'teal', 'slate', 'transparent'];
+const FLOATING_THEME_PRESETS = {
+  blue: { bg: '#2f80ed', bg2: '#56ccf2', text: '#ffffff', opacity: 100 },
+  green: { bg: '#13a976', bg2: '#7bd88f', text: '#ffffff', opacity: 100 },
+  teal: { bg: '#0ea5a4', bg2: '#67e8c9', text: '#ffffff', opacity: 100 },
+  slate: { bg: '#334155', bg2: '#0f766e', text: '#ffffff', opacity: 100 },
+  transparent: { bg: '#ffffff', bg2: '#ffffff', text: '#111827', opacity: 22 },
+};
+const FLOATING_MIN_WIDTH = 180;
+const FLOATING_MAX_WIDTH = 420;
+const FLOATING_MIN_FONT_SCALE = 80;
+const FLOATING_MAX_FONT_SCALE = 140;
+const FLOATING_BASE_HEIGHT = 88;
+const FLOATING_VISIBLE_EDGE_PX = 18;
+const FLOATING_EDGE_DOCK_THRESHOLD_PX = 72;
 const DEFAULT_TASK_IDS = ['sit', 'water', 'eye'];
 const GENERATED_TASK_TITLE_VALUES = ['New Reminder', '新提醒'];
 const GENERATED_TASK_DESC_VALUES = [
@@ -160,10 +192,776 @@ function getFloatingThemeLabel(theme) {
   return label === `floating.theme.${theme}` ? theme : label;
 }
 
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
+
+function normalizeHexColor(value, fallback) {
+  const raw = String(value || '').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw.toLowerCase();
+  return fallback;
+}
+
+function hexToRgb(value) {
+  const color = normalizeHexColor(value, '#000000').slice(1);
+  return [
+    parseInt(color.slice(0, 2), 16),
+    parseInt(color.slice(2, 4), 16),
+    parseInt(color.slice(4, 6), 16),
+  ];
+}
+
+function getFloatingThemePreset(theme = settings.floatingWindowTheme) {
+  return FLOATING_THEME_PRESETS[theme] || FLOATING_THEME_PRESETS.blue;
+}
+
+function applyFloatingThemePreset(theme) {
+  const preset = getFloatingThemePreset(theme);
+  settings.floatingWindowTheme = FLOATING_THEMES.includes(theme) ? theme : 'blue';
+  settings.floatingWindowBgColor = preset.bg;
+  settings.floatingWindowBgColor2 = preset.bg2;
+  settings.floatingWindowTextColor = preset.text;
+  settings.floatingWindowOpacity = preset.opacity;
+}
+
+function normalizeFloatingSettings() {
+  const preset = getFloatingThemePreset();
+  settings.floatingWindowWidth = Math.round(clampNumber(
+    settings.floatingWindowWidth,
+    FLOATING_MIN_WIDTH,
+    FLOATING_MAX_WIDTH,
+    260
+  ));
+  settings.floatingWindowFontScale = Math.round(clampNumber(
+    settings.floatingWindowFontScale,
+    FLOATING_MIN_FONT_SCALE,
+    FLOATING_MAX_FONT_SCALE,
+    100
+  ));
+  settings.floatingWindowOpacity = Math.round(clampNumber(settings.floatingWindowOpacity, 0, 100, preset.opacity));
+  settings.floatingWindowBgColor = normalizeHexColor(settings.floatingWindowBgColor, preset.bg);
+  settings.floatingWindowBgColor2 = normalizeHexColor(settings.floatingWindowBgColor2, preset.bg2);
+  settings.floatingWindowTextColor = normalizeHexColor(settings.floatingWindowTextColor, preset.text);
+  settings.floatingWindowAutoHide = !!settings.floatingWindowAutoHide;
+}
+
+function getFloatingGeometry(open = floatingTaskMenuOpen) {
+  normalizeFloatingSettings();
+  const width = settings.floatingWindowWidth;
+  const fontScale = settings.floatingWindowFontScale / 100;
+  const closedHeight = Math.round(clampNumber(FLOATING_BASE_HEIGHT * fontScale, 70, 116, FLOATING_BASE_HEIGHT));
+  const optionCount = Math.max(4, Math.min(6, getFloatingTaskOptions().length || 4));
+  const menuHeight = Math.round(clampNumber(24 + optionCount * 26, 112, 180, 128));
+  const openHeight = closedHeight + menuHeight + 8;
+  return {
+    width,
+    closedHeight,
+    menuHeight,
+    openHeight: open ? openHeight : closedHeight,
+  };
+}
+
+function getFloatingStyleVars(open = floatingTaskMenuOpen) {
+  const geometry = getFloatingGeometry(open);
+  const bg = hexToRgb(settings.floatingWindowBgColor);
+  const bg2 = hexToRgb(settings.floatingWindowBgColor2);
+  const text = hexToRgb(settings.floatingWindowTextColor);
+  const opacity = settings.floatingWindowOpacity / 100;
+  const fontScale = settings.floatingWindowFontScale / 100;
+  return [
+    `--floating-bg-rgb:${bg.join(', ')}`,
+    `--floating-bg-2-rgb:${bg2.join(', ')}`,
+    `--floating-text-rgb:${text.join(', ')}`,
+    `--floating-opacity:${opacity}`,
+    `--floating-font-scale:${fontScale}`,
+    `--floating-closed-height:${geometry.closedHeight}px`,
+    `--floating-menu-height:${geometry.menuHeight}px`,
+  ].join(';');
+}
+
+async function syncFloatingWindowGeometry(open = floatingTaskMenuOpen) {
+  if (!document.body.classList.contains('floating-mode')) return;
+  const geometry = getFloatingGeometry(open);
+  const root = document.querySelector('.floating-root');
+  if (root) {
+    root.setAttribute('style', getFloatingStyleVars(open));
+  }
+
+  floatingGeometrySyncing = true;
+  try {
+    await invoke('set_floating_task_menu_open', {
+      open,
+      width: geometry.width,
+      closedHeight: geometry.closedHeight,
+      openHeight: geometry.openHeight,
+    }).catch(console.error);
+  } finally {
+    window.setTimeout(() => {
+      floatingGeometrySyncing = false;
+    }, 250);
+  }
+}
+
+function stopFloatingDrag() {
+  if (!floatingDragState) return;
+  const state = floatingDragState;
+  floatingDragState = null;
+  if (floatingDragFrame) {
+    window.cancelAnimationFrame(floatingDragFrame);
+    floatingDragFrame = null;
+  }
+
+  window.removeEventListener('pointermove', handleFloatingDragMove);
+  window.removeEventListener('pointerup', stopFloatingDrag);
+  window.removeEventListener('pointercancel', stopFloatingDrag);
+  window.removeEventListener('blur', stopFloatingDrag);
+  document.body.classList.remove('floating-dragging');
+
+  if (state.pointerTarget && state.pointerId !== undefined) {
+    try {
+      if (state.pointerTarget.hasPointerCapture?.(state.pointerId)) {
+        state.pointerTarget.releasePointerCapture(state.pointerId);
+      }
+    } catch (error) {
+      console.warn('Failed to release floating pointer capture', error);
+    }
+  }
+
+  window.setTimeout(() => {
+    updateFloatingEdgeCandidate().catch(console.error);
+  }, 80);
+}
+
+function getMonitorForCursor(cursor, monitors, fallbackMonitor) {
+  const activeMonitor = monitors.find((monitor) => {
+    const left = monitor.position.x;
+    const top = monitor.position.y;
+    const right = left + monitor.size.width;
+    const bottom = top + monitor.size.height;
+    return cursor.x >= left && cursor.x <= right && cursor.y >= top && cursor.y <= bottom;
+  });
+  return activeMonitor || fallbackMonitor;
+}
+
+function getMonitorOverlapArea(position, size, monitor) {
+  const windowLeft = position.x;
+  const windowTop = position.y;
+  const windowRight = windowLeft + size.width;
+  const windowBottom = windowTop + size.height;
+  const monitorLeft = monitor.position.x;
+  const monitorTop = monitor.position.y;
+  const monitorRight = monitorLeft + monitor.size.width;
+  const monitorBottom = monitorTop + monitor.size.height;
+  const overlapWidth = Math.max(0, Math.min(windowRight, monitorRight) - Math.max(windowLeft, monitorLeft));
+  const overlapHeight = Math.max(0, Math.min(windowBottom, monitorBottom) - Math.max(windowTop, monitorTop));
+  return overlapWidth * overlapHeight;
+}
+
+function getMonitorForWindow(position, size, monitors, fallbackMonitor) {
+  if (!monitors.length) return fallbackMonitor;
+  const byOverlap = monitors
+    .map((monitor) => ({ monitor, overlap: getMonitorOverlapArea(position, size, monitor) }))
+    .sort((a, b) => b.overlap - a.overlap);
+  if (byOverlap[0]?.overlap > 0) return byOverlap[0].monitor;
+
+  const windowCenterX = position.x + size.width / 2;
+  const windowCenterY = position.y + size.height / 2;
+  return monitors
+    .map((monitor) => {
+      const centerX = monitor.position.x + monitor.size.width / 2;
+      const centerY = monitor.position.y + monitor.size.height / 2;
+      return {
+        monitor,
+        distance: Math.hypot(windowCenterX - centerX, windowCenterY - centerY),
+      };
+    })
+    .sort((a, b) => a.distance - b.distance)[0]?.monitor || fallbackMonitor;
+}
+
+function getVirtualDesktopBounds(monitors, fallbackMonitor) {
+  const available = monitors && monitors.length ? monitors : (fallbackMonitor ? [fallbackMonitor] : []);
+  if (!available.length) return null;
+  const left = Math.min(...available.map((monitor) => monitor.position.x));
+  const top = Math.min(...available.map((monitor) => monitor.position.y));
+  const right = Math.max(...available.map((monitor) => monitor.position.x + monitor.size.width));
+  const bottom = Math.max(...available.map((monitor) => monitor.position.y + monitor.size.height));
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+    left,
+    top,
+    right,
+    bottom,
+  };
+}
+
+function getFloatingMonitorBounds(monitor) {
+  if (!monitor) return null;
+  const left = monitor.position.x;
+  const top = monitor.position.y;
+  const right = left + monitor.size.width;
+  const bottom = top + monitor.size.height;
+  return {
+    x: left,
+    y: top,
+    width: monitor.size.width,
+    height: monitor.size.height,
+    left,
+    top,
+    right,
+    bottom,
+  };
+}
+
+function normalizeFloatingBounds(bounds) {
+  if (!bounds) return null;
+  const left = typeof bounds.left === 'number' ? bounds.left : bounds.x;
+  const top = typeof bounds.top === 'number' ? bounds.top : bounds.y;
+  const width = bounds.width;
+  const height = bounds.height;
+  if (![left, top, width, height].every(Number.isFinite)) return null;
+  return {
+    x: left,
+    y: top,
+    width,
+    height,
+    left,
+    top,
+    right: typeof bounds.right === 'number' ? bounds.right : left + width,
+    bottom: typeof bounds.bottom === 'number' ? bounds.bottom : top + height,
+  };
+}
+
+function isSameFloatingBounds(a, b) {
+  const left = normalizeFloatingBounds(a);
+  const right = normalizeFloatingBounds(b);
+  if (!left || !right) return false;
+  return Math.abs(left.left - right.left) <= 2 &&
+    Math.abs(left.top - right.top) <= 2 &&
+    Math.abs(left.right - right.right) <= 2 &&
+    Math.abs(left.bottom - right.bottom) <= 2;
+}
+
+function isFloatingEdgeExternal(edge, bounds, monitors, fallbackMonitor) {
+  const monitorBounds = normalizeFloatingBounds(bounds);
+  const virtualBounds = getVirtualDesktopBounds(monitors, fallbackMonitor);
+  if (!monitorBounds || !virtualBounds) return true;
+  const tolerance = 2;
+  if (edge === 'left') return Math.abs(monitorBounds.left - virtualBounds.left) <= tolerance;
+  if (edge === 'right') return Math.abs(monitorBounds.right - virtualBounds.right) <= tolerance;
+  if (edge === 'top') return Math.abs(monitorBounds.top - virtualBounds.top) <= tolerance;
+  if (edge === 'bottom') return Math.abs(monitorBounds.bottom - virtualBounds.bottom) <= tolerance;
+  return true;
+}
+
+function getFloatingDockCandidates(metrics) {
+  if (!metrics) return [];
+  const { position, size, scale, monitor, monitors } = metrics;
+  const available = monitors && monitors.length ? monitors : (monitor ? [monitor] : []);
+  const threshold = Math.max(48, Math.round(FLOATING_EDGE_DOCK_THRESHOLD_PX * scale));
+  const rangePadding = threshold;
+  const candidates = [];
+
+  available.forEach((item) => {
+    const bounds = getFloatingMonitorBounds(item);
+    if (!bounds) return;
+    const overlapsVertically = position.y + size.height >= bounds.top - rangePadding &&
+      position.y <= bounds.bottom + rangePadding;
+    const overlapsHorizontally = position.x + size.width >= bounds.left - rangePadding &&
+      position.x <= bounds.right + rangePadding;
+
+    if (overlapsVertically) {
+      candidates.push({ edge: 'left', value: Math.abs(position.x - bounds.left), bounds });
+      candidates.push({ edge: 'right', value: Math.abs(position.x + size.width - bounds.right), bounds });
+    }
+    if (overlapsHorizontally) {
+      candidates.push({ edge: 'top', value: Math.abs(position.y - bounds.top), bounds });
+      candidates.push({ edge: 'bottom', value: Math.abs(position.y + size.height - bounds.bottom), bounds });
+    }
+  });
+
+  return candidates
+    .filter((candidate) => candidate.value <= threshold)
+    .map((candidate) => ({
+      ...candidate,
+      external: isFloatingEdgeExternal(candidate.edge, candidate.bounds, available, monitor),
+    }))
+    .sort((a, b) => a.value - b.value);
+}
+
+function detectFloatingDock(metrics, preferredDock = null) {
+  const candidates = getFloatingDockCandidates(metrics);
+  if (!candidates.length) return null;
+
+  if (preferredDock?.edge && preferredDock?.bounds) {
+    const stableCandidate = candidates.find((candidate) =>
+      candidate.edge === preferredDock.edge && isSameFloatingBounds(candidate.bounds, preferredDock.bounds)
+    );
+    if (stableCandidate) return stableCandidate;
+  }
+
+  return candidates[0];
+}
+
+async function applyFloatingDragFrame() {
+  floatingDragFrame = null;
+  if (!floatingDragState) return;
+
+  const cursor = await cursorPosition().catch(() => null);
+  if (!cursor || !floatingDragState) return;
+
+  const { window: floatingWindow, startCursor, startPosition, size, monitor, monitors } = floatingDragState;
+  const bounds = getVirtualDesktopBounds(monitors, monitor);
+  if (!bounds) return;
+  const x = clampNumber(startPosition.x + cursor.x - startCursor.x, bounds.left, bounds.right - size.width, startPosition.x);
+  const y = clampNumber(startPosition.y + cursor.y - startCursor.y, bounds.top, bounds.bottom - size.height, startPosition.y);
+
+  await floatingWindow
+    .setPosition(new PhysicalPosition(Math.round(x), Math.round(y)))
+    .catch(console.error);
+}
+
+function handleFloatingDragMove(event) {
+  if (!floatingDragState) return;
+  event.preventDefault();
+  if (floatingDragFrame) return;
+  floatingDragFrame = window.requestAnimationFrame(() => {
+    applyFloatingDragFrame().catch(console.error);
+  });
+}
+
 async function startFloatingDrag(event) {
   if (event.button !== 0 || event.target.closest('button, input, select, textarea')) return;
   event.preventDefault();
-  await getCurrentWindow().startDragging().catch(console.error);
+  event.stopPropagation();
+
+  floatingPointerInside = true;
+  clearFloatingAutoHideTimer();
+  await revealFloatingWindowFromEdge().catch(console.error);
+
+  const metrics = await getFloatingWindowMetrics().catch(() => null);
+  const startCursor = await cursorPosition().catch(() => null);
+  if (!metrics || !startCursor) return;
+  const monitors = await availableMonitors().catch(() => []);
+
+  floatingDragState = {
+    window: metrics.window,
+    startCursor,
+    startPosition: metrics.position,
+    size: metrics.size,
+    monitor: metrics.monitor,
+    monitors: monitors.length ? monitors : [metrics.monitor],
+    pointerId: event.pointerId,
+    pointerTarget: event.currentTarget,
+  };
+  floatingAutoHideState = { edge: null, hidden: false };
+  stopFloatingEdgeWatch();
+  stopFloatingRevealPolling();
+  document.body.classList.add('floating-dragging');
+
+  try {
+    event.currentTarget?.setPointerCapture?.(event.pointerId);
+  } catch (error) {
+    console.warn('Failed to capture floating pointer', error);
+  }
+
+  window.addEventListener('pointermove', handleFloatingDragMove, { passive: false });
+  window.addEventListener('pointerup', stopFloatingDrag);
+  window.addEventListener('pointercancel', stopFloatingDrag);
+  window.addEventListener('blur', stopFloatingDrag);
+}
+
+async function getFloatingWindowMetrics() {
+  const window = getCurrentWindow();
+  const [position, size, scale, current, monitors] = await Promise.all([
+    window.outerPosition(),
+    window.outerSize(),
+    window.scaleFactor(),
+    currentMonitor().catch(() => null),
+    availableMonitors().catch(() => []),
+  ]);
+  const monitor = current || getMonitorForWindow(position, size, monitors, monitors[0] || null);
+  if (!monitor) return null;
+
+  return { window, position, size, scale, monitor, monitors };
+}
+
+function detectFloatingEdge(metrics) {
+  return detectFloatingDock(metrics)?.edge || null;
+}
+
+function inferHiddenFloatingDock(metrics) {
+  if (!metrics) return null;
+  const { position, size, scale, monitor, monitors } = metrics;
+  const available = monitors && monitors.length ? monitors : (monitor ? [monitor] : []);
+  const visibleEdge = Math.max(8, Math.round((FLOATING_VISIBLE_EDGE_PX + 6) * scale));
+  const near = (a, b) => Math.abs(a - b) <= visibleEdge + 2;
+
+  for (const item of available) {
+    const bounds = getFloatingMonitorBounds(item);
+    if (!bounds) continue;
+    const externalLeft = position.x < bounds.left && position.x + size.width <= bounds.left + visibleEdge;
+    const externalRight = position.x + size.width > bounds.right && position.x >= bounds.right - visibleEdge;
+    const externalTop = position.y < bounds.top && position.y + size.height <= bounds.top + visibleEdge;
+    const externalBottom = position.y + size.height > bounds.bottom && position.y >= bounds.bottom - visibleEdge;
+    const collapsedLeft = size.width <= visibleEdge + 2 && near(position.x, bounds.left);
+    const collapsedRight = size.width <= visibleEdge + 2 && near(position.x + size.width, bounds.right);
+    const collapsedTop = size.height <= visibleEdge + 2 && near(position.y, bounds.top);
+    const collapsedBottom = size.height <= visibleEdge + 2 && near(position.y + size.height, bounds.bottom);
+
+    if (externalLeft || collapsedLeft) {
+      return { edge: 'left', bounds, external: isFloatingEdgeExternal('left', bounds, available, monitor) };
+    }
+    if (externalRight || collapsedRight) {
+      return { edge: 'right', bounds, external: isFloatingEdgeExternal('right', bounds, available, monitor) };
+    }
+    if (externalTop || collapsedTop) {
+      return { edge: 'top', bounds, external: isFloatingEdgeExternal('top', bounds, available, monitor) };
+    }
+    if (externalBottom || collapsedBottom) {
+      return { edge: 'bottom', bounds, external: isFloatingEdgeExternal('bottom', bounds, available, monitor) };
+    }
+  }
+  return null;
+}
+
+function getFloatingRestoreRect(edge, metrics, dockBounds = null) {
+  const { position, size, scale, monitor } = metrics;
+  const bounds = normalizeFloatingBounds(dockBounds) || getFloatingMonitorBounds(monitor);
+  if (!bounds) return { x: position.x, y: position.y, width: size.width, height: size.height };
+  const width = Math.round(clampNumber(settings.floatingWindowWidth, FLOATING_MIN_WIDTH, FLOATING_MAX_WIDTH, 260) * scale);
+  const height = Math.round(getFloatingGeometry(false).closedHeight * scale);
+
+  if (edge === 'left') {
+    return { x: bounds.left, y: clampNumber(position.y, bounds.top, bounds.bottom - height, bounds.top), width, height };
+  }
+  if (edge === 'right') {
+    return { x: bounds.right - width, y: clampNumber(position.y, bounds.top, bounds.bottom - height, bounds.top), width, height };
+  }
+  if (edge === 'top') {
+    return { x: clampNumber(position.x, bounds.left, bounds.right - width, bounds.left), y: bounds.top, width, height };
+  }
+  if (edge === 'bottom') {
+    return { x: clampNumber(position.x, bounds.left, bounds.right - width, bounds.left), y: bounds.bottom - height, width, height };
+  }
+  return { x: position.x, y: position.y, width: size.width, height: size.height };
+}
+
+async function startFloatingRevealWatch(edge, metrics, restore, dockBounds = null) {
+  if (!edge || !metrics || !restore) return;
+  const { scale, monitor } = metrics;
+  const bounds = normalizeFloatingBounds(dockBounds) || getFloatingMonitorBounds(monitor);
+  if (!bounds) return;
+  await invoke('start_floating_reveal_watch', {
+    watch: {
+      edge,
+      restore,
+      monitor: {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      },
+      revealBand: Math.max(56, Math.round((FLOATING_VISIBLE_EDGE_PX + 36) * scale)),
+    },
+  }).catch(console.error);
+}
+
+async function recoverFloatingHiddenState() {
+  if (!settings.floatingWindowAutoHide || floatingAutoHideState.hidden) return;
+  const metrics = await getFloatingWindowMetrics().catch(() => null);
+  const dock = inferHiddenFloatingDock(metrics);
+  if (!metrics || !dock) return;
+
+  const restore = getFloatingRestoreRect(dock.edge, metrics, dock.bounds);
+  floatingAutoHideState = { edge: dock.edge, hidden: true, restore, bounds: dock.bounds, external: dock.external };
+  await startFloatingRevealWatch(dock.edge, metrics, restore, dock.bounds);
+  startFloatingRevealPolling();
+}
+
+async function setFloatingWindowEdgePosition(edge, hidden, dockBounds = null) {
+  const metrics = await getFloatingWindowMetrics();
+  if (!metrics || !edge) return;
+  const { window, position, size, scale, monitor, monitors } = metrics;
+  const bounds = normalizeFloatingBounds(dockBounds) || getFloatingMonitorBounds(monitor);
+  if (!bounds) return;
+  const visibleEdge = Math.max(4, Math.round(FLOATING_VISIBLE_EDGE_PX * scale));
+  const external = isFloatingEdgeExternal(edge, bounds, monitors, monitor);
+  let x = position.x;
+  let y = position.y;
+  let width = size.width;
+  let height = size.height;
+
+  if (hidden) {
+    const restore = { x: position.x, y: position.y, width: size.width, height: size.height };
+    if (!external && (edge === 'left' || edge === 'right')) {
+      width = visibleEdge;
+    } else if (!external && (edge === 'top' || edge === 'bottom')) {
+      height = visibleEdge;
+    }
+
+    if (edge === 'left' && external) {
+      x = bounds.left - size.width + visibleEdge;
+      y = clampNumber(y, bounds.top, bounds.bottom - size.height, y);
+    } else if (edge === 'right' && external) {
+      x = bounds.right - visibleEdge;
+      y = clampNumber(y, bounds.top, bounds.bottom - size.height, y);
+    } else if (edge === 'top' && external) {
+      y = bounds.top - size.height + visibleEdge;
+      x = clampNumber(x, bounds.left, bounds.right - size.width, x);
+    } else if (edge === 'bottom' && external) {
+      y = bounds.bottom - visibleEdge;
+      x = clampNumber(x, bounds.left, bounds.right - size.width, x);
+    } else if (edge === 'left') {
+      x = bounds.left;
+      y = clampNumber(y, bounds.top, bounds.bottom - size.height, y);
+    } else if (edge === 'right') {
+      x = bounds.right - width;
+      y = clampNumber(y, bounds.top, bounds.bottom - size.height, y);
+    } else if (edge === 'top') {
+      y = bounds.top;
+      x = clampNumber(x, bounds.left, bounds.right - size.width, x);
+    } else if (edge === 'bottom') {
+      y = bounds.bottom - height;
+      x = clampNumber(x, bounds.left, bounds.right - size.width, x);
+    }
+
+    floatingGeometrySyncing = true;
+    await window.setSize(new PhysicalSize(Math.round(width), Math.round(height))).catch(console.error);
+    await window.setPosition(new PhysicalPosition(Math.round(x), Math.round(y))).catch(console.error);
+    floatingAutoHideState = { edge, hidden: true, restore, bounds, external };
+    await startFloatingRevealWatch(edge, metrics, restore, bounds);
+    startFloatingRevealPolling();
+    window.setTimeout(() => {
+      floatingGeometrySyncing = false;
+    }, 250);
+    return;
+  }
+
+  const restore = floatingAutoHideState.restore || {
+    x: position.x,
+    y: position.y,
+    width: Math.round(settings.floatingWindowWidth * scale),
+    height: Math.round(getFloatingGeometry(floatingTaskMenuOpen).closedHeight * scale),
+  };
+  width = restore.width;
+  height = restore.height;
+  if (edge === 'left') {
+    x = bounds.left;
+    y = clampNumber(restore.y, bounds.top, bounds.bottom - height, restore.y);
+  } else if (edge === 'right') {
+    x = bounds.right - width;
+    y = clampNumber(restore.y, bounds.top, bounds.bottom - height, restore.y);
+  } else if (edge === 'top') {
+    x = clampNumber(restore.x, bounds.left, bounds.right - width, restore.x);
+    y = bounds.top;
+  } else if (edge === 'bottom') {
+    x = clampNumber(restore.x, bounds.left, bounds.right - width, restore.x);
+    y = bounds.bottom - height;
+  }
+
+  floatingGeometrySyncing = true;
+  await invoke('stop_floating_reveal_watch').catch(() => {});
+  await window.setPosition(new PhysicalPosition(Math.round(x), Math.round(y))).catch(console.error);
+  await window.setSize(new PhysicalSize(Math.round(width), Math.round(height))).catch(console.error);
+  floatingAutoHideState = { edge, hidden: false, restore: null, bounds, external };
+  stopFloatingRevealPolling();
+  if (settings.floatingWindowAutoHide) {
+    startFloatingEdgeWatch();
+  }
+  window.setTimeout(() => {
+    floatingGeometrySyncing = false;
+  }, 250);
+}
+
+async function updateFloatingEdgeCandidate() {
+  if (!document.body.classList.contains('floating-mode') || !settings.floatingWindowAutoHide) return;
+  if (floatingTaskMenuOpen) return;
+  const metrics = await getFloatingWindowMetrics().catch(() => null);
+  const dock = detectFloatingDock(metrics, floatingAutoHideState);
+  floatingAutoHideState = dock
+    ? { edge: dock.edge, hidden: false, bounds: dock.bounds, external: dock.external }
+    : { edge: null, hidden: false };
+  if (dock) {
+    startFloatingEdgeWatch();
+  } else {
+    stopFloatingEdgeWatch();
+  }
+  if (dock && !floatingPointerInside) {
+    scheduleFloatingAutoHide();
+  }
+}
+
+async function hideFloatingWindowToEdge() {
+  if (!settings.floatingWindowAutoHide || floatingTaskMenuOpen) return;
+  const metrics = await getFloatingWindowMetrics().catch(() => null);
+  const dock = floatingAutoHideState.edge
+    ? floatingAutoHideState
+    : detectFloatingDock(metrics);
+  if (!dock?.edge) return;
+  await setFloatingWindowEdgePosition(dock.edge, true, dock.bounds);
+}
+
+async function revealFloatingWindowFromEdge() {
+  if (!floatingAutoHideState.hidden || !floatingAutoHideState.edge) return;
+  await invoke('stop_floating_reveal_watch').catch(() => {});
+  await setFloatingWindowEdgePosition(floatingAutoHideState.edge, false, floatingAutoHideState.bounds);
+}
+
+function markFloatingWindowRevealed() {
+  const { edge, bounds, external } = floatingAutoHideState;
+  floatingAutoHideState = { edge: edge || null, hidden: false, restore: null, bounds, external };
+  floatingPointerInside = true;
+  clearFloatingAutoHideTimer();
+  stopFloatingRevealPolling();
+  if (settings.floatingWindowAutoHide) {
+    window.setTimeout(() => {
+      updateFloatingEdgeCandidate().catch(console.error);
+    }, 150);
+  }
+}
+
+function stopFloatingRevealPolling() {
+  if (floatingRevealPollTimer) {
+    window.clearInterval(floatingRevealPollTimer);
+    floatingRevealPollTimer = null;
+  }
+}
+
+function stopFloatingEdgeWatch() {
+  if (floatingEdgeWatchTimer) {
+    window.clearInterval(floatingEdgeWatchTimer);
+    floatingEdgeWatchTimer = null;
+  }
+}
+
+function startFloatingEdgeWatch() {
+  if (floatingEdgeWatchTimer) return;
+  floatingEdgeWatchTimer = window.setInterval(() => {
+    checkFloatingAutoHideEdge().catch(console.error);
+  }, 220);
+}
+
+function startFloatingRevealPolling() {
+  stopFloatingRevealPolling();
+  stopFloatingEdgeWatch();
+  floatingRevealPollTimer = window.setInterval(() => {
+    checkFloatingRevealEdge().catch(console.error);
+  }, 200);
+}
+
+function isCursorInsideFloatingWindow(metrics, cursor, padding = 0) {
+  if (!metrics || !cursor) return false;
+  const { position, size } = metrics;
+  return cursor.x >= position.x - padding &&
+    cursor.x <= position.x + size.width + padding &&
+    cursor.y >= position.y - padding &&
+    cursor.y <= position.y + size.height + padding;
+}
+
+function clearFloatingAutoHideTimer() {
+  window.clearTimeout(floatingAutoHideTimer);
+  floatingAutoHideTimer = null;
+}
+
+async function checkFloatingAutoHideEdge() {
+  if (!settings.floatingWindowAutoHide || floatingTaskMenuOpen || floatingDragState || floatingAutoHideState.hidden) {
+    if (!floatingAutoHideState.hidden) stopFloatingEdgeWatch();
+    return;
+  }
+
+  const metrics = await getFloatingWindowMetrics().catch(() => null);
+  if (!metrics) return;
+
+  const dock = floatingAutoHideState.edge
+    ? detectFloatingDock(metrics, floatingAutoHideState) || floatingAutoHideState
+    : detectFloatingDock(metrics);
+  if (!dock?.edge) {
+    floatingAutoHideState = { edge: null, hidden: false };
+    stopFloatingEdgeWatch();
+    return;
+  }
+
+  floatingAutoHideState = {
+    edge: dock.edge,
+    hidden: false,
+    bounds: dock.bounds,
+    external: dock.external,
+  };
+  const cursor = await cursorPosition().catch(() => null);
+  if (!cursor) return;
+
+  floatingPointerInside = isCursorInsideFloatingWindow(metrics, cursor, Math.round(4 * metrics.scale));
+  if (!floatingPointerInside) {
+    scheduleFloatingAutoHide();
+  }
+}
+
+async function checkFloatingRevealEdge() {
+  if (!floatingAutoHideState.hidden || !floatingAutoHideState.edge) {
+    stopFloatingRevealPolling();
+    return;
+  }
+
+  const metrics = await getFloatingWindowMetrics().catch(() => null);
+  if (!metrics) return;
+  const cursor = await cursorPosition().catch(() => null);
+  if (!cursor) return;
+
+  const { position, size, scale, monitor } = metrics;
+  const bounds = normalizeFloatingBounds(floatingAutoHideState.bounds) || getFloatingMonitorBounds(monitor);
+  if (!bounds) return;
+  const edge = floatingAutoHideState.edge;
+  const revealBand = Math.max(48, Math.round((FLOATING_VISIBLE_EDGE_PX + 28) * scale));
+  const rangePadding = Math.max(18, Math.round(18 * scale));
+  const inVerticalRange = cursor.y >= position.y - rangePadding && cursor.y <= position.y + size.height + rangePadding;
+  const inHorizontalRange = cursor.x >= position.x - rangePadding && cursor.x <= position.x + size.width + rangePadding;
+  const shouldReveal =
+    (edge === 'left' && cursor.x >= bounds.left - revealBand && cursor.x <= bounds.left + revealBand && inVerticalRange) ||
+    (edge === 'right' && cursor.x >= bounds.right - revealBand && cursor.x <= bounds.right + revealBand && inVerticalRange) ||
+    (edge === 'top' && cursor.y >= bounds.top - revealBand && cursor.y <= bounds.top + revealBand && inHorizontalRange) ||
+    (edge === 'bottom' && cursor.y >= bounds.bottom - revealBand && cursor.y <= bounds.bottom + revealBand && inHorizontalRange);
+
+  if (shouldReveal) {
+    floatingPointerInside = true;
+    await revealFloatingWindowFromEdge();
+  }
+}
+
+function scheduleFloatingAutoHide() {
+  if (!settings.floatingWindowAutoHide) return;
+  if (floatingDragState) return;
+  if (floatingAutoHideTimer) return;
+  floatingAutoHideTimer = window.setTimeout(async () => {
+    floatingAutoHideTimer = null;
+    const metrics = await getFloatingWindowMetrics().catch(() => null);
+    const cursor = await cursorPosition().catch(() => null);
+    if (metrics && cursor && isCursorInsideFloatingWindow(metrics, cursor, Math.round(4 * metrics.scale))) {
+      floatingPointerInside = true;
+      return;
+    }
+    await hideFloatingWindowToEdge().catch(console.error);
+  }, 650);
+}
+
+async function ensureFloatingAutoHideState() {
+  clearFloatingAutoHideTimer();
+  if (!settings.floatingWindowAutoHide && floatingAutoHideState.hidden) {
+    await revealFloatingWindowFromEdge().catch(console.error);
+  }
+  if (!settings.floatingWindowAutoHide) {
+    floatingAutoHideState = { edge: null, hidden: false };
+    invoke('stop_floating_reveal_watch').catch(() => {});
+    stopFloatingEdgeWatch();
+    stopFloatingRevealPolling();
+    return;
+  }
+
+  updateFloatingEdgeCandidate().catch(console.error);
 }
 
 // 同步任务配置到后端
@@ -285,18 +1083,16 @@ async function selectFloatingTask(taskId) {
   floatingTaskMenuOpen = false;
   await saveSettings();
   updateFloatingUI();
-  await invoke('set_floating_task_menu_open', { open: false }).catch(console.error);
+  await syncFloatingWindowGeometry(false);
 }
 
 async function setFloatingTaskMenuOpen(open) {
-  floatingTaskMenuOpen = open;
   if (open) {
-    await invoke('set_floating_task_menu_open', { open: true }).catch(console.error);
-    updateFloatingUI();
-  } else {
-    updateFloatingUI();
-    await invoke('set_floating_task_menu_open', { open: false }).catch(console.error);
+    await revealFloatingWindowFromEdge().catch(console.error);
   }
+  floatingTaskMenuOpen = open;
+  updateFloatingUI();
+  await syncFloatingWindowGeometry(open);
 }
 
 async function closeFloatingTaskMenu() {
@@ -522,6 +1318,9 @@ async function init() {
       setLocale(settings.language || detectLocale());
       isPaused = await invoke('timer_is_paused').catch(() => false);
       renderFloatingUI();
+      bindFloatingWindowLifecycle().catch(console.error);
+      syncFloatingWindowGeometry(false).catch(console.error);
+      recoverFloatingHiddenState().catch(console.error);
 
       watchPauseState();
 
@@ -543,10 +1342,19 @@ async function init() {
 
       listen('settings-updated', (event) => {
         settings = { ...settings, ...event.payload };
+        normalizeFloatingSettings();
         setLocale(settings.language || detectLocale());
         applyTheme(settings.theme);
         renderFloatingUI();
+        ensureFloatingAutoHideState().catch(console.error);
+        recoverFloatingHiddenState().catch(console.error);
+        syncFloatingWindowGeometry(floatingTaskMenuOpen).catch(console.error);
       });
+
+      window.__HEALTH_REMINDER_FLOATING_REVEALED__ = markFloatingWindowRevealed;
+      listen('floating-window-revealed', () => {
+        markFloatingWindowRevealed();
+      }).catch(console.error);
 
       setInterval(updateFloatingUI, 1000);
     }, 500);
@@ -818,8 +1626,12 @@ async function loadSettings() {
   try {
     const saved = await invoke('load_settings');
     if (saved) {
-      const parsed = JSON.parse(saved);
+      const parsed = JSON.parse(saved.replace(/^\uFEFF/, ''));
       settings = { ...settings, ...parsed };
+      if (!Object.prototype.hasOwnProperty.call(parsed, 'floatingWindowBgColor')) {
+        applyFloatingThemePreset(settings.floatingWindowTheme || 'blue');
+      }
+      normalizeFloatingSettings();
       
       // 迁移逻辑：确保旧数据中的任务也有新字段
       settings.tasks = settings.tasks.map(task => {
@@ -836,6 +1648,7 @@ async function loadSettings() {
   } catch (e) {
     console.log('Using default settings');
   }
+  normalizeFloatingSettings();
   
   const savedStats = localStorage.getItem('reminder_stats');
   if (savedStats) {
@@ -1415,6 +2228,7 @@ function updateLiveValues() {
 }
 
 function renderFullUI() {
+  normalizeFloatingSettings();
   const app = document.getElementById('app');
   const locales = getSupportedLocales();
   const currentLang = getLocale();
@@ -1692,6 +2506,53 @@ function renderFullUI() {
           </div>
         </div>
 
+        <div class="setting-row" style="${settings.floatingWindowEnabled ? '' : 'display:none;'}" id="floatingAutoHideRow">
+          <div class="setting-info">
+            <label>${t('settings.floatingAutoHide')}</label>
+            <span class="setting-desc">${t('settings.floatingAutoHideDesc')}</span>
+          </div>
+          <div class="toggle ${settings.floatingWindowAutoHide ? 'active' : ''}" id="floatingAutoHideToggle"></div>
+        </div>
+
+        <div class="setting-row floating-style-row" style="${settings.floatingWindowEnabled ? '' : 'display:none;'}" id="floatingSizeRow">
+          <div class="setting-info">
+            <label>${t('settings.floatingSize')}</label>
+          </div>
+          <div class="floating-style-controls">
+            <label class="floating-control-row">
+              <span>${t('settings.floatingWidth')}</span>
+              <input type="range" id="floatingWidthInput" min="${FLOATING_MIN_WIDTH}" max="${FLOATING_MAX_WIDTH}" value="${settings.floatingWindowWidth}">
+              <strong id="floatingWidthValue">${settings.floatingWindowWidth}px</strong>
+            </label>
+            <label class="floating-control-row">
+              <span>${t('settings.floatingFontScale')}</span>
+              <input type="range" id="floatingFontScaleInput" min="${FLOATING_MIN_FONT_SCALE}" max="${FLOATING_MAX_FONT_SCALE}" value="${settings.floatingWindowFontScale}">
+              <strong id="floatingFontScaleValue">${settings.floatingWindowFontScale}%</strong>
+            </label>
+            <label class="floating-control-row">
+              <span>${t('settings.floatingOpacity')}</span>
+              <input type="range" id="floatingOpacityInput" min="0" max="100" value="${settings.floatingWindowOpacity}">
+              <strong id="floatingOpacityValue">${settings.floatingWindowOpacity}%</strong>
+            </label>
+          </div>
+        </div>
+
+        <div class="setting-row floating-style-row" style="${settings.floatingWindowEnabled ? '' : 'display:none;'}" id="floatingColorRow">
+          <div class="setting-info">
+            <label>${t('settings.floatingColors')}</label>
+          </div>
+          <div class="floating-color-controls">
+            <label>
+              <span>${t('settings.floatingBackground')}</span>
+              <input type="color" id="floatingBgColorInput" value="${settings.floatingWindowBgColor}">
+            </label>
+            <label>
+              <span>${t('settings.floatingTextColor')}</span>
+              <input type="color" id="floatingTextColorInput" value="${settings.floatingWindowTextColor}">
+            </label>
+          </div>
+        </div>
+
         <div class="setting-row" style="${settings.floatingWindowEnabled && settings.floatingWindowMode === 'customCountdown' ? '' : 'display:none;'}" id="floatingCustomRow">
           <div class="setting-info">
             <label>${t('settings.floatingCustom')}</label>
@@ -1904,28 +2765,32 @@ async function toggleFloatingTaskPause() {
 function renderFloatingUI() {
   const app = document.getElementById('app');
   const floatingTheme = FLOATING_THEMES.includes(settings.floatingWindowTheme) ? settings.floatingWindowTheme : 'blue';
+  const floatingVars = getFloatingStyleVars(floatingTaskMenuOpen);
   app.innerHTML = `
-    <div class="floating-shell floating-theme-${floatingTheme}" data-tauri-drag-region>
-      <div class="floating-main" data-tauri-drag-region>
-        <div class="floating-title" data-tauri-drag-region>${t('floating.nextReminder')}</div>
-        <div class="floating-time-row" data-tauri-drag-region>
-          <div class="floating-time" data-tauri-drag-region>--:--</div>
-          <button class="floating-task-cycle" id="floatingTaskCycleBtn" title="${t('floating.selectTask')}">${ICONS.chevronDown}</button>
+    <div class="floating-root floating-theme-${floatingTheme}" style="${floatingVars}">
+      <div class="floating-shell">
+        <div class="floating-main">
+          <div class="floating-title">${t('floating.nextReminder')}</div>
+          <div class="floating-time-row">
+            <div class="floating-time">--:--</div>
+            <button class="floating-task-cycle" id="floatingTaskCycleBtn" title="${t('floating.selectTask')}">${ICONS.chevronDown}</button>
+          </div>
+          <div class="floating-meta">${t('status.loading')}</div>
         </div>
-        <div class="floating-meta" data-tauri-drag-region>${t('status.loading')}</div>
-      </div>
-      <div class="floating-task-menu" id="floatingTaskMenu">
-        ${getFloatingTaskOptions().map(option => `
-          <button type="button" class="floating-task-menu-item ${(settings.floatingSelectedTaskId || '') === option.id ? 'active' : ''}" data-task-id="${option.id}">
-            ${option.label}
-          </button>
-        `).join('')}
-      </div>
-      <div class="floating-actions">
-        <button class="floating-action" id="floatingPauseBtn" title="${t('buttons.pause')}">${ICONS.pause}</button>
-        <button class="floating-action" id="floatingResetBtn" title="${t('floating.resetTimer')}">${ICONS.reset}</button>
-        <button class="floating-action" id="floatingOpenBtn" title="${t('floating.openMain')}">O</button>
-        <button class="floating-action" id="floatingHideBtn" title="${t('floating.hide')}">X</button>
+        <div class="floating-task-menu" id="floatingTaskMenu">
+          ${getFloatingTaskOptions().map(option => `
+            <button type="button" class="floating-task-menu-item ${(settings.floatingSelectedTaskId || '') === option.id ? 'active' : ''}" data-task-id="${option.id}">
+              ${option.label}
+            </button>
+          `).join('')}
+        </div>
+        <div class="floating-actions">
+          <button class="floating-action" id="floatingPauseBtn" title="${t('buttons.pause')}">${ICONS.pause}</button>
+          <button class="floating-action" id="floatingResetBtn" title="${t('floating.resetTimer')}">${ICONS.reset}</button>
+          <button class="floating-action" id="floatingOpenBtn" title="${t('floating.openMain')}">O</button>
+          <button class="floating-action" id="floatingHideBtn" title="${t('floating.hide')}">X</button>
+        </div>
+        <button class="floating-resize-handle" id="floatingResizeHandle" title="${t('floating.resize')}" aria-label="${t('floating.resize')}"></button>
       </div>
     </div>
   `;
@@ -1934,9 +2799,34 @@ function renderFloatingUI() {
 }
 
 function bindFloatingEvents() {
+  const root = document.querySelector('.floating-root');
+  if (root) {
+    root.addEventListener('mouseenter', () => {
+      floatingPointerInside = true;
+      clearFloatingAutoHideTimer();
+      revealFloatingWindowFromEdge().catch(console.error);
+    });
+    root.addEventListener('mouseleave', () => {
+      floatingPointerInside = false;
+      scheduleFloatingAutoHide();
+    });
+  }
+  document.addEventListener('mouseenter', () => {
+    floatingPointerInside = true;
+    clearFloatingAutoHideTimer();
+    revealFloatingWindowFromEdge().catch(console.error);
+  });
+  document.addEventListener('mouseleave', () => {
+    floatingPointerInside = false;
+    scheduleFloatingAutoHide();
+  });
+  window.addEventListener('blur', () => {
+    scheduleFloatingAutoHide();
+  });
+
   const shell = document.querySelector('.floating-shell');
   if (shell) {
-    shell.addEventListener('mousedown', startFloatingDrag);
+    shell.addEventListener('pointerdown', startFloatingDrag);
   }
 
   const openBtn = document.getElementById('floatingOpenBtn');
@@ -1981,12 +2871,64 @@ function bindFloatingEvents() {
     });
   }
 
+  const resizeHandle = document.getElementById('floatingResizeHandle');
+  if (resizeHandle) {
+    resizeHandle.addEventListener('mousedown', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await revealFloatingWindowFromEdge().catch(console.error);
+      await getCurrentWindow().startResizeDragging('SouthEast').catch(console.error);
+    });
+  }
+
   document.querySelectorAll('.floating-task-menu-item').forEach(item => {
     item.addEventListener('click', (event) => {
       event.stopPropagation();
       selectFloatingTask(item.dataset.taskId || '').catch(console.error);
     });
   });
+}
+
+async function bindFloatingWindowLifecycle() {
+  if (floatingWindowLifecycleBound) return;
+  floatingWindowLifecycleBound = true;
+  const currentWindow = getCurrentWindow();
+
+  await currentWindow.onMoved(() => {
+    if (floatingAutoHideState.hidden) return;
+    window.clearTimeout(floatingMoveTimer);
+    floatingMoveTimer = window.setTimeout(() => {
+      updateFloatingEdgeCandidate().catch(console.error);
+    }, 200);
+  }).catch(console.error);
+
+  await currentWindow.onResized((event) => {
+    if (floatingGeometrySyncing || floatingAutoHideState.hidden) return;
+    window.clearTimeout(floatingResizeSaveTimer);
+    floatingResizeSaveTimer = window.setTimeout(async () => {
+      const scale = await getCurrentWindow().scaleFactor().catch(() => 1);
+      const logicalWidth = event.payload.width / scale;
+      const logicalHeight = event.payload.height / scale;
+      const menuOffset = floatingTaskMenuOpen ? getFloatingGeometry(true).menuHeight + 8 : 0;
+      const closedHeight = Math.max(60, logicalHeight - menuOffset);
+
+      settings.floatingWindowWidth = Math.round(clampNumber(
+        logicalWidth,
+        FLOATING_MIN_WIDTH,
+        FLOATING_MAX_WIDTH,
+        settings.floatingWindowWidth
+      ));
+      settings.floatingWindowFontScale = Math.round(clampNumber(
+        (closedHeight / FLOATING_BASE_HEIGHT) * 100,
+        FLOATING_MIN_FONT_SCALE,
+        FLOATING_MAX_FONT_SCALE,
+        settings.floatingWindowFontScale
+      ));
+      normalizeFloatingSettings();
+      updateFloatingUI();
+      await saveSettings();
+    }, 250);
+  }).catch(console.error);
 }
 
 function updateFloatingUI() {
@@ -2010,7 +2952,7 @@ function updateFloatingUI() {
     }
     if (floatingTaskMenuOpen) {
       floatingTaskMenuOpen = false;
-      invoke('set_floating_task_menu_open', { open: false }).catch(console.error);
+      syncFloatingWindowGeometry(false).catch(console.error);
     }
     if (taskMenu) taskMenu.classList.remove('open');
     const remaining = getCustomCountdownRemaining();
@@ -2090,6 +3032,11 @@ function bindEvents() {
         saveSettings();
         syncFloatingWindow();
         renderFullUI();
+      } else if (el.id === 'floatingAutoHideToggle') {
+        settings.floatingWindowAutoHide = !settings.floatingWindowAutoHide;
+        el.classList.toggle('active', settings.floatingWindowAutoHide);
+        saveSettings();
+        syncFloatingWindow();
       } else if (el.id === 'lockToggle') {
         settings.lockScreenEnabled = !settings.lockScreenEnabled;
         el.classList.toggle('active', settings.lockScreenEnabled);
@@ -2145,7 +3092,7 @@ function bindEvents() {
 
   document.querySelectorAll('.floating-theme-swatch').forEach(el => {
     el.addEventListener('click', async () => {
-      settings.floatingWindowTheme = el.dataset.theme || 'blue';
+      applyFloatingThemePreset(el.dataset.theme || 'blue');
       await saveSettings();
       await syncFloatingWindow();
       renderFullUI();
@@ -2445,6 +3392,44 @@ function bindEvents() {
       saveSettings();
       syncFloatingWindow();
       renderFullUI();
+    });
+  }
+
+  const bindFloatingRange = (inputId, settingKey, valueId, suffix) => {
+    const input = document.getElementById(inputId);
+    const valueEl = document.getElementById(valueId);
+    if (!input) return;
+    input.addEventListener('input', (e) => {
+      settings[settingKey] = parseInt(e.target.value, 10);
+      normalizeFloatingSettings();
+      if (valueEl) valueEl.textContent = `${settings[settingKey]}${suffix}`;
+      saveSettings();
+      syncFloatingWindow();
+    });
+  };
+
+  bindFloatingRange('floatingWidthInput', 'floatingWindowWidth', 'floatingWidthValue', 'px');
+  bindFloatingRange('floatingFontScaleInput', 'floatingWindowFontScale', 'floatingFontScaleValue', '%');
+  bindFloatingRange('floatingOpacityInput', 'floatingWindowOpacity', 'floatingOpacityValue', '%');
+
+  const floatingBgColorInput = document.getElementById('floatingBgColorInput');
+  if (floatingBgColorInput) {
+    floatingBgColorInput.addEventListener('input', (e) => {
+      settings.floatingWindowBgColor = normalizeHexColor(e.target.value, settings.floatingWindowBgColor);
+      settings.floatingWindowBgColor2 = settings.floatingWindowBgColor;
+      settings.floatingWindowTheme = 'custom';
+      saveSettings();
+      syncFloatingWindow();
+    });
+  }
+
+  const floatingTextColorInput = document.getElementById('floatingTextColorInput');
+  if (floatingTextColorInput) {
+    floatingTextColorInput.addEventListener('input', (e) => {
+      settings.floatingWindowTextColor = normalizeHexColor(e.target.value, settings.floatingWindowTextColor);
+      settings.floatingWindowTheme = 'custom';
+      saveSettings();
+      syncFloatingWindow();
     });
   }
 

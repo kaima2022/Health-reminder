@@ -1252,6 +1252,67 @@ body {
   transform: translateY(-1px);
 }
 
+.floating-theme-transparent {
+  --floating-accent: #ffffff;
+  --floating-accent-2: #f8fafc;
+}
+
+.floating-style-row {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.floating-style-controls,
+.floating-color-controls {
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.floating-control-row,
+.floating-color-controls label {
+  display: grid;
+  grid-template-columns: 46px minmax(110px, 1fr) 44px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.floating-control-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.floating-control-row strong {
+  color: var(--text);
+  font-size: 0.76rem;
+  text-align: right;
+}
+
+.floating-color-controls {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.floating-color-controls label {
+  width: 104px;
+  grid-template-columns: 1fr 34px;
+}
+
+.floating-color-controls input[type="color"] {
+  width: 34px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
 body.floating-mode {
   background: transparent;
   min-height: 100vh;
@@ -1271,30 +1332,59 @@ body.floating-mode #app {
   padding: 0;
 }
 
-.floating-shell {
+.floating-root {
   --floating-accent: #2f80ed;
   --floating-accent-2: #56ccf2;
   --floating-shadow: rgba(20, 76, 150, 0.28);
+  --floating-bg-rgb: 47, 128, 237;
+  --floating-bg-2-rgb: 86, 204, 242;
+  --floating-text-rgb: 255, 255, 255;
+  --floating-opacity: 1;
+  --floating-font-scale: 1;
+  --floating-closed-height: 88px;
+  --floating-menu-height: 128px;
+  width: 100vw;
+  height: 100vh;
   position: relative;
-  width: calc(100vw - 16px);
-  height: 88px;
-  margin: calc(100vh - 96px) 8px 8px;
+}
+
+.floating-shell {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  height: calc(var(--floating-closed-height) - 8px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px 10px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  gap: min(calc(7px * var(--floating-font-scale)), max(3px, calc(100vw * 0.022)));
+  padding:
+    calc(8px * var(--floating-font-scale))
+    min(calc(10px * var(--floating-font-scale)), max(7px, calc(100vw * 0.04)))
+    calc(8px * var(--floating-font-scale))
+    min(calc(16px * var(--floating-font-scale)), max(10px, calc(100vw * 0.05)));
+  border: 1px solid rgba(var(--floating-text-rgb), 0.24);
   border-radius: 999px;
   background:
-    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.28), transparent 24%),
-    linear-gradient(135deg, var(--floating-accent), var(--floating-accent-2));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26);
-  color: #fff;
+    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.22), transparent 24%),
+    linear-gradient(
+      135deg,
+      rgba(var(--floating-bg-rgb), var(--floating-opacity)),
+      rgba(var(--floating-bg-2-rgb), var(--floating-opacity))
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 8px 26px rgba(15, 23, 42, 0.12);
+  color: rgb(var(--floating-text-rgb));
   cursor: grab;
 }
 
 .floating-shell:active {
+  cursor: grabbing;
+}
+
+body.floating-dragging .floating-shell,
+body.floating-dragging .floating-shell * {
   cursor: grabbing;
 }
 
@@ -1331,10 +1421,10 @@ body.floating-mode #app {
 }
 
 .floating-title {
-  max-width: 185px;
-  font-size: 0.72rem;
+  max-width: 100%;
+  font-size: calc(0.72rem * var(--floating-font-scale));
   font-weight: 650;
-  color: rgba(255, 255, 255, 0.76);
+  color: rgba(var(--floating-text-rgb), 0.76);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1343,67 +1433,68 @@ body.floating-mode #app {
 .floating-time-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: min(4px, max(2px, calc(100vw * 0.015)));
   min-width: 0;
 }
 
 .floating-time {
-  font-size: 1.5rem;
+  font-size: min(calc(1.5rem * var(--floating-font-scale)), max(0.82rem, calc((100vw - 110px) / 5.2)));
   line-height: 1;
   font-weight: 800;
-  color: #fff;
+  color: rgb(var(--floating-text-rgb));
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 8px rgba(15, 23, 42, 0.2);
+  white-space: nowrap;
 }
 
 .floating-task-cycle {
-  width: 19px;
-  height: 19px;
+  width: min(calc(19px * var(--floating-font-scale)), max(15px, calc(100vw / 12)));
+  height: min(calc(19px * var(--floating-font-scale)), max(15px, calc(100vw / 12)));
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(var(--floating-text-rgb), 0.22);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(var(--floating-text-rgb), 0.12);
+  color: rgba(var(--floating-text-rgb), 0.9);
   cursor: pointer;
   padding: 0;
   flex: 0 0 auto;
 }
 
 .floating-task-cycle:hover {
-  border-color: rgba(255, 255, 255, 0.52);
-  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(var(--floating-text-rgb), 0.52);
+  background: rgba(var(--floating-text-rgb), 0.22);
 }
 
 .floating-task-cycle.active {
-  border-color: rgba(255, 255, 255, 0.62);
-  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(var(--floating-text-rgb), 0.62);
+  background: rgba(var(--floating-text-rgb), 0.25);
 }
 
 .floating-task-cycle svg {
-  width: 11px;
-  height: 11px;
+  width: min(calc(11px * var(--floating-font-scale)), max(9px, calc(100vw / 18)));
+  height: min(calc(11px * var(--floating-font-scale)), max(9px, calc(100vw / 18)));
 }
 
 .floating-task-menu {
   position: absolute;
-  left: 16px;
-  bottom: 96px;
-  width: 188px;
-  max-height: 88px;
+  left: 12px;
+  bottom: calc(100% + 6px);
+  width: min(calc(100vw - 24px), 248px);
+  max-height: var(--floating-menu-height);
   display: none;
   flex-direction: column;
   gap: 1px;
   padding: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.26);
+  border: 1px solid rgba(var(--floating-text-rgb), 0.22);
   border-radius: 12px;
-  background: rgba(15, 23, 42, 0.78);
+  background: rgba(var(--floating-bg-rgb), 0.94);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.24);
   backdrop-filter: blur(10px);
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.45) transparent;
+  scrollbar-color: rgba(var(--floating-text-rgb), 0.45) transparent;
   z-index: 5;
 }
 
@@ -1416,7 +1507,7 @@ body.floating-mode #app {
 }
 
 .floating-task-menu::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.42);
+  background: rgba(var(--floating-text-rgb), 0.42);
   border-radius: 999px;
 }
 
@@ -1426,13 +1517,13 @@ body.floating-mode #app {
 
 .floating-task-menu-item {
   width: 100%;
-  min-height: 19px;
+  min-height: calc(20px * var(--floating-font-scale));
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(var(--floating-text-rgb), 0.84);
   cursor: pointer;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem * var(--floating-font-scale));
   font-weight: 650;
   line-height: 1.15;
   text-align: left;
@@ -1444,15 +1535,15 @@ body.floating-mode #app {
 
 .floating-task-menu-item:hover,
 .floating-task-menu-item.active {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
+  background: rgba(var(--floating-text-rgb), 0.16);
+  color: rgb(var(--floating-text-rgb));
 }
 
 .floating-meta {
-  max-width: 185px;
-  font-size: 0.68rem;
+  max-width: 100%;
+  font-size: calc(0.68rem * var(--floating-font-scale));
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(var(--floating-text-rgb), 0.72);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1461,31 +1552,31 @@ body.floating-mode #app {
 .floating-actions {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: min(calc(5px * var(--floating-font-scale)), max(2px, calc(100vw * 0.018)));
   justify-content: center;
 }
 
 .floating-action {
-  width: 24px;
-  height: 24px;
+  width: min(calc(23px * var(--floating-font-scale)), max(18px, calc(100vw / 10)));
+  height: min(calc(23px * var(--floating-font-scale)), max(18px, calc(100vw / 10)));
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(var(--floating-text-rgb), 0.28);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  background: rgba(var(--floating-text-rgb), 0.14);
+  color: rgb(var(--floating-text-rgb));
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--floating-font-scale));
   font-weight: 750;
   line-height: 1;
   transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
 }
 
 .floating-action:hover {
-  border-color: rgba(255, 255, 255, 0.58);
-  background: rgba(255, 255, 255, 0.24);
-  color: #fff;
+  border-color: rgba(var(--floating-text-rgb), 0.58);
+  background: rgba(var(--floating-text-rgb), 0.24);
+  color: rgb(var(--floating-text-rgb));
   transform: translateY(-1px);
 }
 
@@ -1496,14 +1587,34 @@ body.floating-mode #app {
 }
 
 .floating-action:disabled:hover {
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(var(--floating-text-rgb), 0.28);
+  background: rgba(var(--floating-text-rgb), 0.14);
   transform: none;
 }
 
 .floating-action svg {
-  width: 13px;
-  height: 13px;
+  width: calc(13px * var(--floating-font-scale));
+  height: calc(13px * var(--floating-font-scale));
+}
+
+.floating-resize-handle {
+  position: absolute;
+  right: 7px;
+  bottom: 6px;
+  width: 15px;
+  height: 15px;
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  background:
+    linear-gradient(135deg, transparent 48%, rgba(var(--floating-text-rgb), 0.34) 50%, transparent 52%),
+    linear-gradient(135deg, transparent 62%, rgba(var(--floating-text-rgb), 0.24) 64%, transparent 66%);
+  cursor: nwse-resize;
+  opacity: 0.65;
+}
+
+.floating-resize-handle:hover {
+  opacity: 1;
 }
 
 /* 空闲阈值设置 */
