@@ -118,7 +118,7 @@ let floatingDragState = null;
 let floatingAutoHideState = { edge: null, hidden: false };
 let floatingPointerInside = false;
 let floatingSuppressClickUntil = 0;
-let appVersion = '1.8.0';
+let appVersion = '1.8.1';
 
 let domCache = null;
 let isUiSuspended = false;
@@ -139,7 +139,7 @@ const FLOATING_MIN_FONT_SCALE = 80;
 const FLOATING_MAX_FONT_SCALE = 140;
 const FLOATING_BASE_HEIGHT = 88;
 const FLOATING_VISIBLE_EDGE_PX = 18;
-const FLOATING_EDGE_DOCK_THRESHOLD_PX = 72;
+const FLOATING_EDGE_DOCK_THRESHOLD_PX = 18;
 const DEFAULT_TASK_IDS = ['sit', 'water', 'eye'];
 const GENERATED_TASK_TITLE_VALUES = ['New Reminder', '新提醒'];
 const GENERATED_TASK_DESC_VALUES = [
@@ -465,7 +465,7 @@ function getFloatingDockCandidates(metrics) {
   const { position, size, scale, monitor, monitors } = metrics;
   const available = monitors && monitors.length ? monitors : (monitor ? [monitor] : []);
   const ownerBounds = getFloatingMonitorBounds(monitor);
-  const threshold = Math.max(48, Math.round(FLOATING_EDGE_DOCK_THRESHOLD_PX * scale));
+  const threshold = Math.max(18, Math.round(FLOATING_EDGE_DOCK_THRESHOLD_PX * scale));
   const rangePadding = threshold;
   const candidates = [];
 

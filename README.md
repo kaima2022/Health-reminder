@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.0-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.1-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -191,6 +191,10 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.8.1 (2026-07-03)
+- **悬浮窗外观热修**：移除悬浮窗外侧阴影，并弱化右下角拖拽提示，透明/浅色主题下更干净。
+- **靠边隐藏触发收紧**：将靠边吸附检测范围从宽松距离收窄到贴边触发，避免离边较远时提前隐藏。
 
 ### v1.8.0 (2026-07-03)
 - **悬浮窗靠边隐藏优化**（[#18](https://github.com/kaima2022/Health-reminder/issues/18)）：新增靠边自动隐藏与鼠标靠近自动展开，区分外侧屏幕边缘和双屏中间接缝，避免跨屏横跳或展开到另一块屏。

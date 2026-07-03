@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.0-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.1-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -190,6 +190,10 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.8.1 (2026-07-03)
+- **Floating appearance hotfix**: Removed the outer floating-window shadow and softened the resize hint so transparent/light themes look cleaner.
+- **Tighter edge auto-hide trigger**: Reduced the docking detection range so the floating window hides only when it is actually close to the edge.
 
 ### v1.8.0 (2026-07-03)
 - **Floating edge auto-hide** ([#18](https://github.com/kaima2022/Health-reminder/issues/18)): Added edge auto-hide and hover-to-reveal behavior, with separate handling for outer screen edges and the seam between two monitors to avoid cross-screen jumping.

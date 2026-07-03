@@ -37,6 +37,7 @@ jobs:
           - Silent auto-start and tray-first startup support.
           - Floating countdown window and daily fixed-time reminders.
           - Floating window edge auto-hide, hover reveal, and safer dual-monitor seam handling.
+          - Tighter edge auto-hide trigger distance and cleaner floating-window shadow treatment.
           - Floating window appearance controls for width, font scale, opacity, background, and text color.
           - Paused floating countdowns now freeze consistently across global pause, per-task pause, lock screen, and idle state.
           - In-app version display now follows Tauri app metadata.
