@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.5-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.0-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -23,6 +23,13 @@
 
 
 ##  展示
+
+### v1.8.0 悬浮窗靠边隐藏与样式优化
+
+<p align="center">
+  <img src="./docs/screenshots/floating-window-edge-autohide.png" alt="悬浮窗靠边自动隐藏" width="45%">
+  <img src="./docs/screenshots/floating-window-compact-controls.png" alt="悬浮窗紧凑控制与样式" width="45%">
+</p>
 
 ### v1.7.0 悬浮窗与定点提醒
 
@@ -184,6 +191,11 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.8.0 (2026-07-03)
+- **悬浮窗靠边隐藏优化**（[#18](https://github.com/kaima2022/Health-reminder/issues/18)）：新增靠边自动隐藏与鼠标靠近自动展开，区分外侧屏幕边缘和双屏中间接缝，避免跨屏横跳或展开到另一块屏。
+- **悬浮窗交互稳定性**（[#18](https://github.com/kaima2022/Health-reminder/issues/18)）：折叠态禁用拖拽/缩放误触，隐藏条被移动时会自动回到原边缘，减少小概率无法拉出的情况。
+- **悬浮窗外观设置**：支持更窄宽度、字体大小、透明度、背景色和文字色配置，设置区去除多余说明文字，保持界面更紧凑。
 
 ### v1.7.5 (2026-06-13)
 - **v1.7 稳定性维护**：统一全局暂停、单任务暂停、系统锁屏、应用锁屏和空闲状态的冻结逻辑，悬浮窗暂停后剩余时间保持稳定，不再异常增加。

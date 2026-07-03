@@ -112,11 +112,13 @@ let floatingResizeSaveTimer = null;
 let floatingAutoHideTimer = null;
 let floatingRevealPollTimer = null;
 let floatingEdgeWatchTimer = null;
+let floatingHiddenPinTimer = null;
 let floatingDragFrame = null;
 let floatingDragState = null;
 let floatingAutoHideState = { edge: null, hidden: false };
 let floatingPointerInside = false;
-let appVersion = '1.7.5';
+let floatingSuppressClickUntil = 0;
+let appVersion = '1.8.0';
 
 let domCache = null;
 let isUiSuspended = false;
@@ -462,6 +464,7 @@ function getFloatingDockCandidates(metrics) {
   if (!metrics) return [];
   const { position, size, scale, monitor, monitors } = metrics;
   const available = monitors && monitors.length ? monitors : (monitor ? [monitor] : []);
+  const ownerBounds = getFloatingMonitorBounds(monitor);
   const threshold = Math.max(48, Math.round(FLOATING_EDGE_DOCK_THRESHOLD_PX * scale));
   const rangePadding = threshold;
   const candidates = [];
@@ -490,7 +493,16 @@ function getFloatingDockCandidates(metrics) {
       ...candidate,
       external: isFloatingEdgeExternal(candidate.edge, candidate.bounds, available, monitor),
     }))
-    .sort((a, b) => a.value - b.value);
+    .map((candidate) => ({
+      ...candidate,
+      owner: isSameFloatingBounds(candidate.bounds, ownerBounds),
+    }))
+    .sort((a, b) => {
+      const distanceDelta = a.value - b.value;
+      if (Math.abs(distanceDelta) > 4) return distanceDelta;
+      if (a.owner !== b.owner) return a.owner ? -1 : 1;
+      return distanceDelta;
+    });
 }
 
 function detectFloatingDock(metrics, preferredDock = null) {
@@ -534,7 +546,24 @@ function handleFloatingDragMove(event) {
   });
 }
 
+async function revealFloatingWindowFromHiddenInteraction(event = null, options = {}) {
+  if (options.primaryButtonOnly && event?.button !== 0) return false;
+  const hiddenState = await recoverFloatingHiddenStateFromGeometry();
+  if (!hiddenState?.hidden) return false;
+
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  if (event?.type === 'pointerdown' || event?.type === 'mousedown') {
+    floatingSuppressClickUntil = Date.now() + 400;
+  }
+  clearFloatingAutoHideTimer();
+  floatingPointerInside = true;
+  await revealFloatingWindowFromEdge().catch(console.error);
+  return true;
+}
+
 async function startFloatingDrag(event) {
+  if (await revealFloatingWindowFromHiddenInteraction(event, { primaryButtonOnly: true })) return;
   if (event.button !== 0 || event.target.closest('button, input, select, textarea')) return;
   event.preventDefault();
   event.stopPropagation();
@@ -559,6 +588,7 @@ async function startFloatingDrag(event) {
     pointerTarget: event.currentTarget,
   };
   floatingAutoHideState = { edge: null, hidden: false };
+  setFloatingHiddenUiState(false);
   stopFloatingEdgeWatch();
   stopFloatingRevealPolling();
   document.body.classList.add('floating-dragging');
@@ -594,6 +624,10 @@ function detectFloatingEdge(metrics) {
   return detectFloatingDock(metrics)?.edge || null;
 }
 
+function setFloatingHiddenUiState(hidden) {
+  document.body?.classList.toggle('floating-hidden', Boolean(hidden));
+}
+
 function inferHiddenFloatingDock(metrics) {
   if (!metrics) return null;
   const { position, size, scale, monitor, monitors } = metrics;
@@ -604,29 +638,87 @@ function inferHiddenFloatingDock(metrics) {
   for (const item of available) {
     const bounds = getFloatingMonitorBounds(item);
     if (!bounds) continue;
-    const externalLeft = position.x < bounds.left && position.x + size.width <= bounds.left + visibleEdge;
-    const externalRight = position.x + size.width > bounds.right && position.x >= bounds.right - visibleEdge;
-    const externalTop = position.y < bounds.top && position.y + size.height <= bounds.top + visibleEdge;
-    const externalBottom = position.y + size.height > bounds.bottom && position.y >= bounds.bottom - visibleEdge;
-    const collapsedLeft = size.width <= visibleEdge + 2 && near(position.x, bounds.left);
-    const collapsedRight = size.width <= visibleEdge + 2 && near(position.x + size.width, bounds.right);
-    const collapsedTop = size.height <= visibleEdge + 2 && near(position.y, bounds.top);
-    const collapsedBottom = size.height <= visibleEdge + 2 && near(position.y + size.height, bounds.bottom);
+    const leftExternal = isFloatingEdgeExternal('left', bounds, available, monitor);
+    const rightExternal = isFloatingEdgeExternal('right', bounds, available, monitor);
+    const topExternal = isFloatingEdgeExternal('top', bounds, available, monitor);
+    const bottomExternal = isFloatingEdgeExternal('bottom', bounds, available, monitor);
+    const externalLeft = leftExternal && position.x < bounds.left && position.x + size.width <= bounds.left + visibleEdge;
+    const externalRight = rightExternal && position.x + size.width > bounds.right && position.x >= bounds.right - visibleEdge;
+    const externalTop = topExternal && position.y < bounds.top && position.y + size.height <= bounds.top + visibleEdge;
+    const externalBottom = bottomExternal && position.y + size.height > bounds.bottom && position.y >= bounds.bottom - visibleEdge;
+    const collapsedLeft = size.width <= visibleEdge + 2 &&
+      near(position.x, bounds.left) &&
+      position.x >= bounds.left - 2 &&
+      position.x <= bounds.left + visibleEdge;
+    const collapsedRight = size.width <= visibleEdge + 2 &&
+      near(position.x + size.width, bounds.right) &&
+      position.x + size.width <= bounds.right + 2 &&
+      position.x + size.width >= bounds.right - visibleEdge;
+    const collapsedTop = size.height <= visibleEdge + 2 &&
+      near(position.y, bounds.top) &&
+      position.y >= bounds.top - 2 &&
+      position.y <= bounds.top + visibleEdge;
+    const collapsedBottom = size.height <= visibleEdge + 2 &&
+      near(position.y + size.height, bounds.bottom) &&
+      position.y + size.height <= bounds.bottom + 2 &&
+      position.y + size.height >= bounds.bottom - visibleEdge;
 
     if (externalLeft || collapsedLeft) {
-      return { edge: 'left', bounds, external: isFloatingEdgeExternal('left', bounds, available, monitor) };
+      return { edge: 'left', bounds, external: leftExternal };
     }
     if (externalRight || collapsedRight) {
-      return { edge: 'right', bounds, external: isFloatingEdgeExternal('right', bounds, available, monitor) };
+      return { edge: 'right', bounds, external: rightExternal };
     }
     if (externalTop || collapsedTop) {
-      return { edge: 'top', bounds, external: isFloatingEdgeExternal('top', bounds, available, monitor) };
+      return { edge: 'top', bounds, external: topExternal };
     }
     if (externalBottom || collapsedBottom) {
-      return { edge: 'bottom', bounds, external: isFloatingEdgeExternal('bottom', bounds, available, monitor) };
+      return { edge: 'bottom', bounds, external: bottomExternal };
     }
   }
   return null;
+}
+
+function getFloatingHiddenRect(edge, bounds, restore, scale, external) {
+  const visibleEdge = Math.max(4, Math.round(FLOATING_VISIBLE_EDGE_PX * scale));
+  let x = restore.x;
+  let y = restore.y;
+  let width = restore.width;
+  let height = restore.height;
+
+  if (!external && (edge === 'left' || edge === 'right')) {
+    width = visibleEdge;
+  } else if (!external && (edge === 'top' || edge === 'bottom')) {
+    height = visibleEdge;
+  }
+
+  if (edge === 'left' && external) {
+    x = bounds.left - restore.width + visibleEdge;
+    y = clampNumber(restore.y, bounds.top, bounds.bottom - restore.height, restore.y);
+  } else if (edge === 'right' && external) {
+    x = bounds.right - visibleEdge;
+    y = clampNumber(restore.y, bounds.top, bounds.bottom - restore.height, restore.y);
+  } else if (edge === 'top' && external) {
+    y = bounds.top - restore.height + visibleEdge;
+    x = clampNumber(restore.x, bounds.left, bounds.right - restore.width, restore.x);
+  } else if (edge === 'bottom' && external) {
+    y = bounds.bottom - visibleEdge;
+    x = clampNumber(restore.x, bounds.left, bounds.right - restore.width, restore.x);
+  } else if (edge === 'left') {
+    x = bounds.left;
+    y = clampNumber(restore.y, bounds.top, bounds.bottom - restore.height, restore.y);
+  } else if (edge === 'right') {
+    x = bounds.right - width;
+    y = clampNumber(restore.y, bounds.top, bounds.bottom - restore.height, restore.y);
+  } else if (edge === 'top') {
+    y = bounds.top;
+    x = clampNumber(restore.x, bounds.left, bounds.right - restore.width, restore.x);
+  } else if (edge === 'bottom') {
+    y = bounds.bottom - height;
+    x = clampNumber(restore.x, bounds.left, bounds.right - restore.width, restore.x);
+  }
+
+  return { x, y, width, height };
 }
 
 function getFloatingRestoreRect(edge, metrics, dockBounds = null) {
@@ -679,8 +771,66 @@ async function recoverFloatingHiddenState() {
 
   const restore = getFloatingRestoreRect(dock.edge, metrics, dock.bounds);
   floatingAutoHideState = { edge: dock.edge, hidden: true, restore, bounds: dock.bounds, external: dock.external };
+  setFloatingHiddenUiState(true);
   await startFloatingRevealWatch(dock.edge, metrics, restore, dock.bounds);
   startFloatingRevealPolling();
+}
+
+async function recoverFloatingHiddenStateFromGeometry() {
+  if (floatingAutoHideState.hidden && floatingAutoHideState.edge) return floatingAutoHideState;
+  const metrics = await getFloatingWindowMetrics().catch(() => null);
+  const dock = inferHiddenFloatingDock(metrics);
+  if (!metrics || !dock) return null;
+
+  const restore = floatingAutoHideState.restore || getFloatingRestoreRect(dock.edge, metrics, dock.bounds);
+  floatingAutoHideState = {
+    edge: dock.edge,
+    hidden: true,
+    restore,
+    bounds: dock.bounds,
+    external: dock.external,
+  };
+  setFloatingHiddenUiState(true);
+  await startFloatingRevealWatch(dock.edge, metrics, restore, dock.bounds);
+  startFloatingRevealPolling();
+  return floatingAutoHideState;
+}
+
+async function pinFloatingHiddenWindowToEdge() {
+  if (!floatingAutoHideState.hidden || !floatingAutoHideState.edge) return;
+  const metrics = await getFloatingWindowMetrics().catch(() => null);
+  if (!metrics) return;
+  const bounds = normalizeFloatingBounds(floatingAutoHideState.bounds) || getFloatingMonitorBounds(metrics.monitor);
+  if (!bounds) return;
+  const external = typeof floatingAutoHideState.external === 'boolean'
+    ? floatingAutoHideState.external
+    : isFloatingEdgeExternal(floatingAutoHideState.edge, bounds, metrics.monitors, metrics.monitor);
+  const restore = floatingAutoHideState.restore || getFloatingRestoreRect(floatingAutoHideState.edge, metrics, bounds);
+  const hiddenRect = getFloatingHiddenRect(floatingAutoHideState.edge, bounds, restore, metrics.scale, external);
+
+  floatingGeometrySyncing = true;
+  await metrics.window.setSize(new PhysicalSize(Math.round(hiddenRect.width), Math.round(hiddenRect.height))).catch(console.error);
+  await metrics.window.setPosition(new PhysicalPosition(Math.round(hiddenRect.x), Math.round(hiddenRect.y))).catch(console.error);
+  floatingAutoHideState = {
+    edge: floatingAutoHideState.edge,
+    hidden: true,
+    restore,
+    bounds,
+    external,
+  };
+  setFloatingHiddenUiState(true);
+  window.setTimeout(() => {
+    floatingGeometrySyncing = false;
+  }, 180);
+}
+
+function scheduleFloatingHiddenPin() {
+  if (!floatingAutoHideState.hidden || floatingGeometrySyncing) return;
+  window.clearTimeout(floatingHiddenPinTimer);
+  floatingHiddenPinTimer = window.setTimeout(() => {
+    floatingHiddenPinTimer = null;
+    pinFloatingHiddenWindowToEdge().catch(console.error);
+  }, 60);
 }
 
 async function setFloatingWindowEdgePosition(edge, hidden, dockBounds = null) {
@@ -689,7 +839,6 @@ async function setFloatingWindowEdgePosition(edge, hidden, dockBounds = null) {
   const { window, position, size, scale, monitor, monitors } = metrics;
   const bounds = normalizeFloatingBounds(dockBounds) || getFloatingMonitorBounds(monitor);
   if (!bounds) return;
-  const visibleEdge = Math.max(4, Math.round(FLOATING_VISIBLE_EDGE_PX * scale));
   const external = isFloatingEdgeExternal(edge, bounds, monitors, monitor);
   let x = position.x;
   let y = position.y;
@@ -698,42 +847,14 @@ async function setFloatingWindowEdgePosition(edge, hidden, dockBounds = null) {
 
   if (hidden) {
     const restore = { x: position.x, y: position.y, width: size.width, height: size.height };
-    if (!external && (edge === 'left' || edge === 'right')) {
-      width = visibleEdge;
-    } else if (!external && (edge === 'top' || edge === 'bottom')) {
-      height = visibleEdge;
-    }
-
-    if (edge === 'left' && external) {
-      x = bounds.left - size.width + visibleEdge;
-      y = clampNumber(y, bounds.top, bounds.bottom - size.height, y);
-    } else if (edge === 'right' && external) {
-      x = bounds.right - visibleEdge;
-      y = clampNumber(y, bounds.top, bounds.bottom - size.height, y);
-    } else if (edge === 'top' && external) {
-      y = bounds.top - size.height + visibleEdge;
-      x = clampNumber(x, bounds.left, bounds.right - size.width, x);
-    } else if (edge === 'bottom' && external) {
-      y = bounds.bottom - visibleEdge;
-      x = clampNumber(x, bounds.left, bounds.right - size.width, x);
-    } else if (edge === 'left') {
-      x = bounds.left;
-      y = clampNumber(y, bounds.top, bounds.bottom - size.height, y);
-    } else if (edge === 'right') {
-      x = bounds.right - width;
-      y = clampNumber(y, bounds.top, bounds.bottom - size.height, y);
-    } else if (edge === 'top') {
-      y = bounds.top;
-      x = clampNumber(x, bounds.left, bounds.right - size.width, x);
-    } else if (edge === 'bottom') {
-      y = bounds.bottom - height;
-      x = clampNumber(x, bounds.left, bounds.right - size.width, x);
-    }
+    const hiddenRect = getFloatingHiddenRect(edge, bounds, restore, scale, external);
+    ({ x, y, width, height } = hiddenRect);
 
     floatingGeometrySyncing = true;
     await window.setSize(new PhysicalSize(Math.round(width), Math.round(height))).catch(console.error);
     await window.setPosition(new PhysicalPosition(Math.round(x), Math.round(y))).catch(console.error);
     floatingAutoHideState = { edge, hidden: true, restore, bounds, external };
+    setFloatingHiddenUiState(true);
     await startFloatingRevealWatch(edge, metrics, restore, bounds);
     startFloatingRevealPolling();
     window.setTimeout(() => {
@@ -769,6 +890,7 @@ async function setFloatingWindowEdgePosition(edge, hidden, dockBounds = null) {
   await window.setPosition(new PhysicalPosition(Math.round(x), Math.round(y))).catch(console.error);
   await window.setSize(new PhysicalSize(Math.round(width), Math.round(height))).catch(console.error);
   floatingAutoHideState = { edge, hidden: false, restore: null, bounds, external };
+  setFloatingHiddenUiState(false);
   stopFloatingRevealPolling();
   if (settings.floatingWindowAutoHide) {
     startFloatingEdgeWatch();
@@ -815,6 +937,7 @@ async function revealFloatingWindowFromEdge() {
 function markFloatingWindowRevealed() {
   const { edge, bounds, external } = floatingAutoHideState;
   floatingAutoHideState = { edge: edge || null, hidden: false, restore: null, bounds, external };
+  setFloatingHiddenUiState(false);
   floatingPointerInside = true;
   clearFloatingAutoHideTimer();
   stopFloatingRevealPolling();
@@ -955,6 +1078,7 @@ async function ensureFloatingAutoHideState() {
   }
   if (!settings.floatingWindowAutoHide) {
     floatingAutoHideState = { edge: null, hidden: false };
+    setFloatingHiddenUiState(false);
     invoke('stop_floating_reveal_watch').catch(() => {});
     stopFloatingEdgeWatch();
     stopFloatingRevealPolling();
@@ -2800,7 +2924,16 @@ function renderFloatingUI() {
 
 function bindFloatingEvents() {
   const root = document.querySelector('.floating-root');
+  const revealFromHidden = (event) => {
+    revealFloatingWindowFromHiddenInteraction(event).catch(console.error);
+  };
   if (root) {
+    root.addEventListener('click', (event) => {
+      if (Date.now() <= floatingSuppressClickUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }, { capture: true });
     root.addEventListener('mouseenter', () => {
       floatingPointerInside = true;
       clearFloatingAutoHideTimer();
@@ -2810,6 +2943,11 @@ function bindFloatingEvents() {
       floatingPointerInside = false;
       scheduleFloatingAutoHide();
     });
+    root.addEventListener('pointerenter', revealFromHidden);
+    root.addEventListener('pointermove', revealFromHidden);
+    root.addEventListener('pointerdown', (event) => {
+      revealFloatingWindowFromHiddenInteraction(event, { primaryButtonOnly: true }).catch(console.error);
+    }, { capture: true });
   }
   document.addEventListener('mouseenter', () => {
     floatingPointerInside = true;
@@ -2826,6 +2964,8 @@ function bindFloatingEvents() {
 
   const shell = document.querySelector('.floating-shell');
   if (shell) {
+    shell.addEventListener('pointerenter', revealFromHidden);
+    shell.addEventListener('pointermove', revealFromHidden);
     shell.addEventListener('pointerdown', startFloatingDrag);
   }
 
@@ -2874,6 +3014,7 @@ function bindFloatingEvents() {
   const resizeHandle = document.getElementById('floatingResizeHandle');
   if (resizeHandle) {
     resizeHandle.addEventListener('mousedown', async (event) => {
+      if (await revealFloatingWindowFromHiddenInteraction(event, { primaryButtonOnly: true })) return;
       event.preventDefault();
       event.stopPropagation();
       await revealFloatingWindowFromEdge().catch(console.error);
@@ -2895,7 +3036,11 @@ async function bindFloatingWindowLifecycle() {
   const currentWindow = getCurrentWindow();
 
   await currentWindow.onMoved(() => {
-    if (floatingAutoHideState.hidden) return;
+    if (floatingGeometrySyncing) return;
+    if (floatingAutoHideState.hidden) {
+      scheduleFloatingHiddenPin();
+      return;
+    }
     window.clearTimeout(floatingMoveTimer);
     floatingMoveTimer = window.setTimeout(() => {
       updateFloatingEdgeCandidate().catch(console.error);
@@ -2903,7 +3048,11 @@ async function bindFloatingWindowLifecycle() {
   }).catch(console.error);
 
   await currentWindow.onResized((event) => {
-    if (floatingGeometrySyncing || floatingAutoHideState.hidden) return;
+    if (floatingGeometrySyncing) return;
+    if (floatingAutoHideState.hidden) {
+      scheduleFloatingHiddenPin();
+      return;
+    }
     window.clearTimeout(floatingResizeSaveTimer);
     floatingResizeSaveTimer = window.setTimeout(async () => {
       const scale = await getCurrentWindow().scaleFactor().catch(() => 1);

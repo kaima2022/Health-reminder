@@ -1388,6 +1388,16 @@ body.floating-dragging .floating-shell * {
   cursor: grabbing;
 }
 
+body.floating-hidden .floating-shell {
+  cursor: default;
+}
+
+body.floating-hidden .floating-actions,
+body.floating-hidden .floating-task-cycle,
+body.floating-hidden .floating-resize-handle {
+  pointer-events: none;
+}
+
 .floating-theme-blue {
   --floating-accent: #2f80ed;
   --floating-accent-2: #56ccf2;

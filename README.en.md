@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.7.5-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.0-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -23,6 +23,13 @@ In today's fast-paced digital era, a healthy body is the cornerstone of high pro
 ---
 
 ## Showcase
+
+### v1.8.0 Floating Edge Auto-Hide & Style Controls
+
+<p align="center">
+  <img src="./docs/screenshots/floating-window-edge-autohide.png" alt="Floating edge auto-hide" width="45%">
+  <img src="./docs/screenshots/floating-window-compact-controls.png" alt="Floating compact controls and styling" width="45%">
+</p>
 
 ### v1.7.0 Floating Window & Daily Reminders
 
@@ -183,6 +190,11 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.8.0 (2026-07-03)
+- **Floating edge auto-hide** ([#18](https://github.com/kaima2022/Health-reminder/issues/18)): Added edge auto-hide and hover-to-reveal behavior, with separate handling for outer screen edges and the seam between two monitors to avoid cross-screen jumping.
+- **Floating interaction stability** ([#18](https://github.com/kaima2022/Health-reminder/issues/18)): Collapsed handles no longer enter drag/resize accidentally, and hidden strips pin back to their original edge if moved.
+- **Floating appearance settings**: Added narrower width, font size, opacity, background color, and text color controls while keeping the settings panel compact.
 
 ### v1.7.5 (2026-06-13)
 - **v1.7 stability maintenance**: Unified freeze handling for global pause, per-task pause, system lock, app lock screen, and idle state so floating-window countdowns stay stable while paused.
