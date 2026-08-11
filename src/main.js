@@ -83,6 +83,7 @@ let workStartTime = Date.now();
 let activePopup = null;
 let taskQueue = []; // 任务队列
 let recentTriggeredTasks = {};
+let triggerHandlingPromises = new Map();
 let lockScreenState = {
   active: false,
   remaining: 0,
@@ -1152,6 +1153,21 @@ function getCountdownTotal(task) {
   return countdownTotals[task.id] || (isDailyTask(task) ? 24 * 60 * 60 : task.interval * 60);
 }
 
+function getTaskLockDuration(task) {
+  const taskDuration = task && task.lockDuration !== undefined ? task.lockDuration : settings.lockDuration;
+  const parsedTaskDuration = Number.parseInt(taskDuration, 10);
+  if (Number.isFinite(parsedTaskDuration) && parsedTaskDuration >= 1) {
+    return parsedTaskDuration;
+  }
+
+  const parsedSettingDuration = Number.parseInt(settings.lockDuration, 10);
+  if (Number.isFinite(parsedSettingDuration) && parsedSettingDuration >= 1) {
+    return parsedSettingDuration;
+  }
+
+  return 1;
+}
+
 function getNextTaskInfo() {
   let nextTask = null;
   let minTime = Infinity;
@@ -1285,6 +1301,47 @@ function applyCountdownUpdates(updates) {
   updates.forEach(applyCountdownInfo);
 }
 
+function getVisibleReminderTaskIds() {
+  if (activePopup) {
+    return activePopup.mergedTaskIds && activePopup.mergedTaskIds.length > 0
+      ? activePopup.mergedTaskIds
+      : [activePopup.id];
+  }
+  if (lockScreenState.active) {
+    return lockScreenState.mergedTaskIds && lockScreenState.mergedTaskIds.length > 0
+      ? lockScreenState.mergedTaskIds
+      : lockScreenState.task ? [lockScreenState.task.id] : [];
+  }
+  return [];
+}
+
+function isReminderTaskVisible(taskId) {
+  return getVisibleReminderTaskIds().includes(taskId);
+}
+
+function shouldRecoverZeroCountdownTrigger(info, task) {
+  if (!task || !info.enabled || info.task_paused || info.snoozed || isPaused || isIdle) {
+    return false;
+  }
+  return Number(info.remaining) === 0 && !isReminderTaskVisible(task.id);
+}
+
+function recoverZeroCountdownTrigger(task) {
+  const payload = {
+    id: task.id,
+    title: getTaskDisplayTitle(task),
+    desc: getTaskDisplayDesc(task),
+    icon: task.icon,
+  };
+  handleTriggeredTask(payload)
+    .then(async handled => {
+      if (handled) {
+        await acknowledgeTriggeredTask(payload);
+      }
+    })
+    .catch(console.error);
+}
+
 async function refreshCountdownsFromBackend(options = {}) {
   const { render = true } = options;
   const updates = await invoke('get_countdowns');
@@ -1383,31 +1440,63 @@ async function syncFloatingWindow() {
 }
 
 async function handleTriggeredTask(task) {
+  if (!task || !task.id) return false;
+  const existing = triggerHandlingPromises.get(task.id);
+  if (existing) {
+    return existing;
+  }
+
+  const handling = handleTriggeredTaskOnce(task).finally(() => {
+    triggerHandlingPromises.delete(task.id);
+  });
+  triggerHandlingPromises.set(task.id, handling);
+  return handling;
+}
+
+async function handleTriggeredTaskOnce(task) {
   const now = Date.now();
   if (recentTriggeredTasks[task.id] && now - recentTriggeredTasks[task.id] < 5000) {
-    return;
+    return true;
   }
-  recentTriggeredTasks[task.id] = now;
 
   // 找到完整的任务配置
   const fullTask = settings.tasks.find(t => t.id === task.id) || task;
 
-  if (activePopup || lockScreenState.active) {
-    // 如果当前已有弹窗或锁屏，加入队列
-    if (!taskQueue.find(t => t.id === fullTask.id)) {
-      taskQueue.push(fullTask);
+  try {
+    if (activePopup || lockScreenState.active) {
+      // Queue while another reminder UI is active.
+      if (isReminderTaskVisible(fullTask.id)) {
+        recentTriggeredTasks[task.id] = Date.now();
+        return true;
+      }
+      if (!taskQueue.find(t => t.id === fullTask.id)) {
+        taskQueue.push(fullTask);
+      }
+    } else {
+      await triggerNotification(fullTask);
     }
-  } else {
-    await triggerNotification(fullTask);
+    recentTriggeredTasks[task.id] = Date.now();
+    return true;
+  } catch (e) {
+    console.error('Failed to handle triggered task', e);
+    return false;
   }
+}
+
+async function acknowledgeTriggeredTask(task) {
+  if (!task || !task.id) return;
+  await invoke('ack_triggered_task', { taskId: task.id }).catch(console.error);
 }
 
 async function pollTriggeredTasks() {
   try {
-    const tasks = await invoke('take_triggered_tasks');
+    const tasks = await invoke('peek_triggered_tasks');
     if (Array.isArray(tasks)) {
       for (const task of tasks) {
-        await handleTriggeredTask(task);
+        const handled = await handleTriggeredTask(task);
+        if (handled) {
+          await acknowledgeTriggeredTask(task);
+        }
       }
     }
   } catch (e) {
@@ -1423,8 +1512,14 @@ function startTriggeredTaskPolling() {
   run();
 }
 
-window.__HEALTH_REMINDER_HANDLE_TRIGGER__ = (task) => {
-  handleTriggeredTask(task).catch(console.error);
+window.__HEALTH_REMINDER_HANDLE_TRIGGER__ = async (task) => {
+  const handled = await handleTriggeredTask(task).catch(err => {
+    console.error(err);
+    return false;
+  });
+  if (handled) {
+    await acknowledgeTriggeredTask(task);
+  }
 };
 
 async function init() {
@@ -1493,7 +1588,8 @@ async function init() {
       icon: urlParams.get('icon') || 'eye',
       id: 'slave_lock'
     };
-    const duration = parseInt(urlParams.get('duration') || '10');
+    const parsedDuration = Number.parseInt(urlParams.get('duration') || '10', 10);
+    const duration = Number.isFinite(parsedDuration) && parsedDuration >= 1 ? parsedDuration : 10;
 
     // Parse slave settings
     settings.lockDuration = duration;
@@ -1589,6 +1685,7 @@ async function init() {
   // 监听后端倒计时更新事件
   await listen('countdown-update', (event) => {
     const updates = event.payload;
+    const zeroCountdownTasks = [];
     updates.forEach(info => {
       applyCountdownInfo(info);
       
@@ -1608,7 +1705,11 @@ async function init() {
            );
         }
       }
+      if (shouldRecoverZeroCountdownTrigger(info, task)) {
+        zeroCountdownTasks.push(task);
+      }
     });
+    zeroCountdownTasks.forEach(recoverZeroCountdownTrigger);
     if (!isUiSuspended) {
       updateLiveValues();
     } else {
@@ -1618,7 +1719,10 @@ async function init() {
 
   // 监听后端任务触发事件
   await listen('task-triggered', async (event) => {
-    await handleTriggeredTask(event.payload);
+    const handled = await handleTriggeredTask(event.payload);
+    if (handled) {
+      await acknowledgeTriggeredTask(event.payload);
+    }
   });
   startTriggeredTaskPolling();
 
@@ -1856,7 +1960,7 @@ async function startLockScreen(task, mergedTasks = []) {
     });
   floatingWindowVisibleBeforeLock = settings.floatingWindowEnabled;
   // 使用任务级别的锁屏时长，如果没有则使用全局设置
-  const lockDuration = task.lockDuration || settings.lockDuration;
+  const lockDuration = getTaskLockDuration(task);
   const mergedIds = mergedTasks.length > 0 ? mergedTasks.map(t => t.id) : [task.id];
 
   lockScreenState = {
@@ -1995,7 +2099,7 @@ function updateLockScreenTimer() {
   const progressEl = document.querySelector('.lock-timer-ring .progress');
 
   if (secondsEl) {
-    const remaining = lockScreenState.remaining;
+    const remaining = Math.max(0, Math.floor(Number(lockScreenState.remaining) || 0));
     if (remaining >= 60) {
       const mins = Math.floor(remaining / 60);
       const secs = remaining % 60;
@@ -2009,8 +2113,9 @@ function updateLockScreenTimer() {
 
   if (progressEl) {
     // 使用任务级别的锁屏时长，如果没有则使用全局设置
-    const total = lockScreenState.task?.lockDuration || settings.lockDuration;
-    const offset = 565 * (1 - lockScreenState.remaining / total);
+    const total = getTaskLockDuration(lockScreenState.task);
+    const remaining = Math.max(0, Math.floor(Number(lockScreenState.remaining) || 0));
+    const offset = 565 * (1 - remaining / total);
     progressEl.style.strokeDashoffset = offset;
   }
 }
@@ -2168,12 +2273,13 @@ function formatTime(seconds) {
 }
 
 function formatLockTime(seconds) {
-  if (seconds >= 60) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+  const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  if (safeSeconds >= 60) {
+    const mins = Math.floor(safeSeconds / 60);
+    const secs = safeSeconds % 60;
     return { time: `${mins}:${String(secs).padStart(2, '0')}`, unit: t('time.minutes') };
   }
-  return { time: seconds, unit: t('time.seconds') };
+  return { time: safeSeconds, unit: t('time.seconds') };
 }
 
 // 获取任务的显示标题（默认任务使用翻译，自定义任务使用用户设置）
@@ -2439,7 +2545,7 @@ function renderFullUI() {
             </div>
             <div class="footer-option">
               <span>${t('taskCard.lockDuration')}</span>
-              <input type="number" class="lock-input lock-duration-input" value="${task.lockDuration || settings.lockDuration}" data-id="${task.id}" min="5" max="3600">
+              <input type="number" class="lock-input lock-duration-input" value="${getTaskLockDuration(task)}" data-id="${task.id}" min="1" max="3600">
               <span>${t('time.seconds')}</span>
             </div>
           </div>
@@ -3350,7 +3456,7 @@ function bindEvents() {
       const id = el.dataset.id;
       const task = settings.tasks.find(t => t.id === id);
       const val = parseInt(e.target.value);
-      if (task && val >= 5) {
+      if (task && Number.isFinite(val) && val >= 1) {
         task.lockDuration = val;
         saveSettings();
       }

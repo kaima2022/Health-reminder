@@ -278,6 +278,22 @@ fn get_timer_state() -> &'static Mutex<TimerState> {
     TIMER_STATE.get_or_init(|| Mutex::new(TimerState::new()))
 }
 
+fn enqueue_pending_trigger(state: &mut TimerState, payload: &TaskTriggeredPayload) {
+    if !state
+        .pending_triggers
+        .iter()
+        .any(|pending| pending.id == payload.id)
+    {
+        state.pending_triggers.push(payload.clone());
+    }
+}
+
+fn clear_pending_trigger(state: &mut TimerState, task_id: &str) {
+    state
+        .pending_triggers
+        .retain(|pending| pending.id != task_id);
+}
+
 fn is_daily_task(task: &TaskConfig) -> bool {
     task.schedule_type == "daily" && !task.daily_times.is_empty()
 }
@@ -471,6 +487,34 @@ mod tests {
 
         assert_eq!(timer.frozen_remaining, Some(45 * 60));
         assert_eq!(timer.frozen_total, Some(45 * 60));
+    }
+
+    #[test]
+    fn pending_triggers_are_deduplicated_and_acknowledged_by_task() {
+        let mut state = TimerState::new();
+        let sit_payload = TaskTriggeredPayload {
+            id: "sit".to_string(),
+            title: "Stand Up".to_string(),
+            desc: String::new(),
+            icon: "clock".to_string(),
+        };
+        let eye_payload = TaskTriggeredPayload {
+            id: "eye".to_string(),
+            title: "Eye Rest".to_string(),
+            desc: String::new(),
+            icon: "eye".to_string(),
+        };
+
+        enqueue_pending_trigger(&mut state, &sit_payload);
+        enqueue_pending_trigger(&mut state, &sit_payload);
+        enqueue_pending_trigger(&mut state, &eye_payload);
+
+        assert_eq!(state.pending_triggers.len(), 2);
+
+        clear_pending_trigger(&mut state, "sit");
+
+        assert_eq!(state.pending_triggers.len(), 1);
+        assert_eq!(state.pending_triggers[0].id, "eye");
     }
 }
 
@@ -798,6 +842,15 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
         }
 
         state.tasks = new_tasks;
+        let active_task_ids: HashSet<String> = state
+            .tasks
+            .iter()
+            .filter(|(_, timer)| timer.config.enabled)
+            .map(|(id, _)| id.clone())
+            .collect();
+        state
+            .pending_triggers
+            .retain(|pending| active_task_ids.contains(&pending.id));
     } // drop lock
 
     rebuild_tray_menu(&app);
@@ -899,6 +952,7 @@ fn timer_reset_task(task_id: String) {
             clear_timer_freeze(timer);
         }
     }
+    clear_pending_trigger(&mut state, &task_id);
 }
 
 #[tauri::command]
@@ -922,6 +976,7 @@ fn timer_reset_all() {
             clear_timer_freeze(timer);
         }
     }
+    state.pending_triggers.clear();
 }
 
 #[tauri::command]
@@ -943,6 +998,7 @@ fn timer_snooze_task(task_id: String, minutes: u64) {
             clear_timer_freeze(timer);
         }
     }
+    clear_pending_trigger(&mut state, &task_id);
 }
 
 #[tauri::command]
@@ -1008,9 +1064,15 @@ fn get_countdowns() -> Vec<CountdownInfo> {
 }
 
 #[tauri::command]
-fn take_triggered_tasks() -> Vec<TaskTriggeredPayload> {
+fn peek_triggered_tasks() -> Vec<TaskTriggeredPayload> {
+    let state = get_timer_state().lock().unwrap();
+    state.pending_triggers.clone()
+}
+
+#[tauri::command]
+fn ack_triggered_task(task_id: String) {
     let mut state = get_timer_state().lock().unwrap();
-    state.pending_triggers.drain(..).collect()
+    clear_pending_trigger(&mut state, &task_id);
 }
 
 #[tauri::command]
@@ -1386,9 +1448,9 @@ fn start_timer_thread(app_handle: AppHandle) {
 
             if !tasks_to_trigger.is_empty() {
                 let mut state = get_timer_state().lock().unwrap();
-                state
-                    .pending_triggers
-                    .extend(tasks_to_trigger.iter().cloned());
+                for task in &tasks_to_trigger {
+                    enqueue_pending_trigger(&mut state, task);
+                }
             }
 
             // 发送触发事件到前端
@@ -1721,7 +1783,6 @@ fn start_floating_reveal_watch(
                 }
                 guard.watch.clone()
             };
-
             let Some(watch) = current_watch else {
                 return;
             };
@@ -2038,7 +2099,8 @@ pub fn run() {
             timer_reset_all,
             timer_snooze_task,
             get_countdowns,
-            take_triggered_tasks,
+            peek_triggered_tasks,
+            ack_triggered_task,
             timer_set_system_locked,
             timer_set_lock_screen_active,
             set_idle_threshold,
