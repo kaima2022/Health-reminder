@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.1-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.2-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -191,6 +191,11 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.8.2 (2026-08-11)
+- **锁屏触发可靠性修复**（[#19](https://github.com/kaima2022/Health-reminder/issues/19)）：修复极短锁屏时长和倒计时归零边界下可能漏弹锁屏的问题，前端会主动确认后端待触发任务并在处理完成后回执。
+- **锁屏输入防护**（[#19](https://github.com/kaima2022/Health-reminder/issues/19)）：锁屏倒计时期间拦截键盘、滚轮和非锁屏控件点击，减少误操作背景窗口；倒计时结束后支持 Enter/Space 或确认按钮结束休息。
+- **交互收敛**：移除不稳定的键盘长按紧急解锁路径，紧急解锁仍通过界面按钮长按完成，避免与正常休息倒计时产生歧义。
 
 ### v1.8.1 (2026-07-03)
 - **悬浮窗外观热修**：移除悬浮窗外侧阴影，并弱化右下角拖拽提示，透明/浅色主题下更干净。

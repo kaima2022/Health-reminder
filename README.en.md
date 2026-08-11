@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.1-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.2-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -190,6 +190,11 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.8.2 (2026-08-11)
+- **Lock-screen trigger reliability** ([#19](https://github.com/kaima2022/Health-reminder/issues/19)): Fixed missed lock screens around very short rest durations and zero-countdown timing boundaries by letting the frontend confirm and acknowledge pending backend triggers.
+- **Lock-screen input guard** ([#19](https://github.com/kaima2022/Health-reminder/issues/19)): During the lock-screen countdown, keyboard input, mouse wheel events, and clicks outside lock controls are intercepted to reduce accidental background-window actions; after the countdown ends, Enter/Space or the confirm button can finish the rest.
+- **Interaction cleanup**: Removed the unreliable keyboard long-press emergency-unlock path. Emergency unlock remains available through the on-screen long-press button, avoiding confusion with the normal rest countdown.
 
 ### v1.8.1 (2026-07-03)
 - **Floating appearance hotfix**: Removed the outer floating-window shadow and softened the resize hint so transparent/light themes look cleaner.

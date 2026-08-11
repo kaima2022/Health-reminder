@@ -2158,13 +2158,6 @@ function isLockControlTarget(target) {
     !!target.closest('.unlock-btn, .confirm-btn, #lockSnoozeBtn');
 }
 
-function canUseEmergencyKeyboardUnlock() {
-  return lockScreenState.active &&
-    !lockScreenState.waitingConfirm &&
-    !settings.strictMode &&
-    !isLockSlaveWindow;
-}
-
 function confirmFinishedRestFromKeyboard() {
   if (lockKeyboardConfirming || isLockSlaveWindow) return;
   lockKeyboardConfirming = true;
@@ -2178,23 +2171,14 @@ function handleLockKeyDown(event) {
 
   blockLockInputEvent(event);
 
-  if (!isLockConfirmKey(event)) return;
-  if (lockScreenState.waitingConfirm) {
+  if (lockScreenState.waitingConfirm && isLockConfirmKey(event)) {
     confirmFinishedRestFromKeyboard();
-    return;
-  }
-  if (canUseEmergencyKeyboardUnlock() && !event.repeat) {
-    startUnlockPress();
   }
 }
 
 function handleLockKeyUp(event) {
   if (!lockScreenState.active) return;
   blockLockInputEvent(event);
-
-  if (isLockConfirmKey(event) && canUseEmergencyKeyboardUnlock()) {
-    cancelUnlockPress();
-  }
 }
 
 function handleLockBlockedInput(event) {
