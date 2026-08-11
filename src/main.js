@@ -92,6 +92,9 @@ let lockScreenState = {
   unlockTimer: null,
   waitingConfirm: false,
 };
+let lockInputGuardInstalled = false;
+let lockKeyboardConfirming = false;
+let lockScreenEnding = false;
 
 let updateInfo = null;
 let isUpdating = false;
@@ -1526,6 +1529,7 @@ async function init() {
   applyTheme(settings.theme); // 在加载设置后立即应用主题
   await loadAppVersion();
   const urlParams = new URLSearchParams(window.location.search);
+  installLockInputGuard();
   if (urlParams.get('mode') === 'floating') {
     document.body.classList.add('floating-mode');
     setLocale(settings.language || detectLocale());
@@ -1943,6 +1947,9 @@ async function triggerNotification(task) {
 }
 
 async function startLockScreen(task, mergedTasks = []) {
+  if (document.activeElement && typeof document.activeElement.blur === 'function') {
+    document.activeElement.blur();
+  }
   try {
     invoke('timer_set_lock_screen_active', { active: true }).catch(console.error);
   } catch (e) {
@@ -1972,6 +1979,7 @@ async function startLockScreen(task, mergedTasks = []) {
     unlockTimer: null,
     waitingConfirm: false,
   };
+  lockScreenEnding = false;
 
   renderFullUI();
 
@@ -2057,6 +2065,8 @@ async function snoozeTask(minutes) {
 }
 
 async function endLockScreen(snoozed = false) {
+  if (!lockScreenState.active || lockScreenEnding) return;
+  lockScreenEnding = true;
   const restoreMainWindow = mainWindowVisibleBeforeLock;
   const restoreFloatingWindow = floatingWindowVisibleBeforeLock && settings.floatingWindowEnabled;
 
@@ -2090,6 +2100,8 @@ async function endLockScreen(snoozed = false) {
 
   lockScreenState.active = false;
   lockScreenState.waitingConfirm = false;
+  lockKeyboardConfirming = false;
+  lockScreenEnding = false;
   processNextTask();
 }
 
@@ -2118,6 +2130,105 @@ function updateLockScreenTimer() {
     const offset = 565 * (1 - remaining / total);
     progressEl.style.strokeDashoffset = offset;
   }
+}
+
+function isLockConfirmKey(event) {
+  return event.code === 'Enter' ||
+    event.code === 'NumpadEnter' ||
+    event.code === 'Space' ||
+    event.key === 'Enter' ||
+    event.key === ' ' ||
+    event.key === 'Spacebar' ||
+    event.keyCode === 13 ||
+    event.keyCode === 32 ||
+    event.which === 13 ||
+    event.which === 32;
+}
+
+function blockLockInputEvent(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (typeof event.stopImmediatePropagation === 'function') {
+    event.stopImmediatePropagation();
+  }
+}
+
+function isLockControlTarget(target) {
+  return target instanceof Element &&
+    !!target.closest('.unlock-btn, .confirm-btn, #lockSnoozeBtn');
+}
+
+function canUseEmergencyKeyboardUnlock() {
+  return lockScreenState.active &&
+    !lockScreenState.waitingConfirm &&
+    !settings.strictMode &&
+    !isLockSlaveWindow;
+}
+
+function confirmFinishedRestFromKeyboard() {
+  if (lockKeyboardConfirming || isLockSlaveWindow) return;
+  lockKeyboardConfirming = true;
+  endLockScreen().finally(() => {
+    lockKeyboardConfirming = false;
+  });
+}
+
+function handleLockKeyDown(event) {
+  if (!lockScreenState.active) return;
+
+  blockLockInputEvent(event);
+
+  if (!isLockConfirmKey(event)) return;
+  if (lockScreenState.waitingConfirm) {
+    confirmFinishedRestFromKeyboard();
+    return;
+  }
+  if (canUseEmergencyKeyboardUnlock() && !event.repeat) {
+    startUnlockPress();
+  }
+}
+
+function handleLockKeyUp(event) {
+  if (!lockScreenState.active) return;
+  blockLockInputEvent(event);
+
+  if (isLockConfirmKey(event) && canUseEmergencyKeyboardUnlock()) {
+    cancelUnlockPress();
+  }
+}
+
+function handleLockBlockedInput(event) {
+  if (!lockScreenState.active) return;
+  blockLockInputEvent(event);
+}
+
+function handleLockPointerInput(event) {
+  if (!lockScreenState.active) return;
+  if (isLockControlTarget(event.target)) return;
+  blockLockInputEvent(event);
+}
+
+function installLockInputGuard() {
+  if (lockInputGuardInstalled) return;
+  lockInputGuardInstalled = true;
+
+  const blockingOptions = { capture: true, passive: false };
+  window.addEventListener('keydown', handleLockKeyDown, blockingOptions);
+  window.addEventListener('keyup', handleLockKeyUp, blockingOptions);
+  window.addEventListener('wheel', handleLockBlockedInput, blockingOptions);
+  window.addEventListener('beforeinput', handleLockBlockedInput, blockingOptions);
+  window.addEventListener('touchmove', handleLockBlockedInput, blockingOptions);
+  window.addEventListener('contextmenu', handleLockBlockedInput, blockingOptions);
+  window.addEventListener('pointerdown', handleLockPointerInput, blockingOptions);
+  window.addEventListener('pointerup', handleLockPointerInput, blockingOptions);
+  window.addEventListener('mousedown', handleLockPointerInput, blockingOptions);
+  window.addEventListener('click', handleLockPointerInput, blockingOptions);
+  window.addEventListener('dblclick', handleLockPointerInput, blockingOptions);
+  window.addEventListener('blur', () => {
+    if (lockScreenState.active) {
+      cancelUnlockPress();
+    }
+  });
 }
 
 function startUnlockPress() {
@@ -3566,7 +3677,7 @@ function bindEvents() {
 
   const confirmBtn = document.getElementById('confirmBtn');
   if (confirmBtn) {
-    confirmBtn.addEventListener('click', endLockScreen);
+    confirmBtn.addEventListener('click', () => endLockScreen());
   }
 
   const updateBtn = document.getElementById('updateBtn');

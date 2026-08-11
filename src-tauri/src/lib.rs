@@ -150,6 +150,8 @@ struct FloatingRevealState(Arc<Mutex<FloatingRevealInner>>);
 struct LockStateInner {
     windows: Vec<String>,
     args: Option<LockTaskArgs>,
+    active: bool,
+    generation: u64,
 }
 struct LockState(Mutex<LockStateInner>);
 
@@ -1964,6 +1966,28 @@ fn create_slave_window(
     }
 }
 
+fn start_lock_focus_watch(app: tauri::AppHandle, generation: u64) {
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(650));
+
+        let should_continue = {
+            let state = app.state::<LockState>();
+            let guard = state.0.lock().unwrap();
+            guard.active && guard.generation == generation
+        };
+
+        if !should_continue {
+            return;
+        }
+
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_always_on_top(true);
+            let _ = window.set_focus();
+        }
+    });
+}
+
 #[tauri::command]
 async fn enter_lock_mode(
     app: tauri::AppHandle,
@@ -2022,6 +2046,12 @@ async fn enter_lock_mode(
     let mut state_guard = state.0.lock().unwrap();
     state_guard.windows.extend(created_windows);
     state_guard.args = task;
+    state_guard.active = true;
+    state_guard.generation = state_guard.generation.wrapping_add(1);
+    let generation = state_guard.generation;
+    drop(state_guard);
+
+    start_lock_focus_watch(app.clone(), generation);
 
     Ok(())
 }
@@ -2048,6 +2078,8 @@ fn exit_lock_mode(app: tauri::AppHandle, state: State<LockState>, restore_visibl
     }
 
     let mut state_guard = state.0.lock().unwrap();
+    state_guard.active = false;
+    state_guard.generation = state_guard.generation.wrapping_add(1);
     for label in state_guard.windows.iter() {
         if let Some(w) = app.get_webview_window(label) {
             let _ = w.close();
@@ -2117,6 +2149,8 @@ pub fn run() {
         .manage(LockState(Mutex::new(LockStateInner {
             windows: Vec::new(),
             args: None,
+            active: false,
+            generation: 0,
         })))
         .manage(PauseMenuState(Mutex::new(None)))
         .manage(LanguageState(Mutex::new("zh-CN".to_string())))
