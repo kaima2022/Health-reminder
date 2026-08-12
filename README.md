@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.2-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.3-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -191,6 +191,10 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.8.3 (2026-08-12)
+- **安全维护**（[CVE-2026-31812](https://github.com/advisories/GHSA-6xvm-j4wr-6v98)）：将 `quinn-proto` 从 `0.11.13` 更新到 `0.11.14`，修复 QUIC transport parameter 解析异常可能导致的远程拒绝服务风险。
+- **发布处理**：未合并外部自动扫描 PR [#20](https://github.com/kaima2022/Health-reminder/pull/20)，由维护者在主分支重新应用同等修复并完成验证。
 
 ### v1.8.2 (2026-08-11)
 - **锁屏触发可靠性修复**（[#19](https://github.com/kaima2022/Health-reminder/issues/19)）：修复极短锁屏时长和倒计时归零边界下可能漏弹锁屏的问题，前端会主动确认后端待触发任务并在处理完成后回执。

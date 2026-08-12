@@ -40,6 +40,7 @@ jobs:
           - Tighter edge auto-hide trigger distance and cleaner floating-window shadow treatment.
           - Floating window appearance controls for width, font scale, opacity, background, and text color.
           - Paused floating countdowns now freeze consistently across global pause, per-task pause, lock screen, and idle state.
+          - Security maintenance: quinn-proto is updated to 0.11.14 for CVE-2026-31812.
           - Lock-screen trigger delivery is more reliable for very short rest durations and zero-countdown boundaries.
           - Lock-screen countdown now guards keyboard, wheel, and background clicks.
           - In-app version display now follows Tauri app metadata.

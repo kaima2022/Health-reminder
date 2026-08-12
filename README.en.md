@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.2-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.3-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -190,6 +190,10 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.8.3 (2026-08-12)
+- **Security maintenance** ([CVE-2026-31812](https://github.com/advisories/GHSA-6xvm-j4wr-6v98)): Updated `quinn-proto` from `0.11.13` to `0.11.14` to fix a remote denial-of-service risk in QUIC transport parameter parsing.
+- **Release handling**: External automated scan PR [#20](https://github.com/kaima2022/Health-reminder/pull/20) was not merged; the maintainer reapplied the equivalent fix on `main` and validated it locally.
 
 ### v1.8.2 (2026-08-11)
 - **Lock-screen trigger reliability** ([#19](https://github.com/kaima2022/Health-reminder/issues/19)): Fixed missed lock screens around very short rest durations and zero-countdown timing boundaries by letting the frontend confirm and acknowledge pending backend triggers.
