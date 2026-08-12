@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+env:
+  NODE_OPTIONS: --use-system-ca
+
 jobs:
   prepare-release:
     runs-on: ubuntu-latest

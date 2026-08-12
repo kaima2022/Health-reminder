@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+env:
+  NODE_OPTIONS: --use-system-ca
+
 jobs:
   check:
     runs-on: windows-latest
