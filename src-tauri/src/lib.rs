@@ -155,6 +155,27 @@ struct LockStateInner {
 }
 struct LockState(Mutex<LockStateInner>);
 
+type MonitorGeometry = (i32, i32, u32, u32);
+
+fn monitor_geometry(monitor: &tauri::Monitor) -> MonitorGeometry {
+    (
+        monitor.position().x,
+        monitor.position().y,
+        monitor.size().width,
+        monitor.size().height,
+    )
+}
+
+fn monitor_geometry_for_position(
+    monitors: &[tauri::Monitor],
+    position: tauri::PhysicalPosition<i32>,
+) -> Option<MonitorGeometry> {
+    monitors
+        .iter()
+        .find(|monitor| monitor.position().x == position.x && monitor.position().y == position.y)
+        .map(monitor_geometry)
+}
+
 struct PauseMenuState(Mutex<Option<MenuItem<tauri::Wry>>>);
 
 // 语言状态管理
@@ -1315,42 +1336,62 @@ fn start_timer_thread(app_handle: AppHandle) {
                 // Self-Healing (only run every 1 second to avoid performance issues)
                 if should_run_timer_logic {
                     if let Ok(monitors) = app_handle.available_monitors() {
-                        let mut covered_indices = HashSet::new();
+                        let mut covered_geometries: HashSet<MonitorGeometry> = HashSet::new();
 
                         if let Some(main_win) = app_handle.get_webview_window("main") {
                             if let Ok(pos) = main_win.outer_position() {
-                                for (i, m) in monitors.iter().enumerate() {
-                                    if m.position().x == pos.x && m.position().y == pos.y {
-                                        covered_indices.insert(i);
-                                        break;
-                                    }
+                                if let Some(geometry) =
+                                    monitor_geometry_for_position(&monitors, pos)
+                                {
+                                    covered_geometries.insert(geometry);
                                 }
                             }
                         }
 
+                        let mut retained_windows = Vec::new();
                         for label in &windows {
                             if let Some(slave) = app_handle.get_webview_window(label) {
                                 if let Ok(pos) = slave.outer_position() {
-                                    for (i, m) in monitors.iter().enumerate() {
-                                        if m.position().x == pos.x && m.position().y == pos.y {
-                                            covered_indices.insert(i);
+                                    if let Some(geometry) =
+                                        monitor_geometry_for_position(&monitors, pos)
+                                    {
+                                        if covered_geometries.insert(geometry) {
+                                            retained_windows.push(label.clone());
+                                        } else {
+                                            let _ = slave.close();
                                         }
+                                    } else {
+                                        let _ = slave.close();
                                     }
+                                } else {
+                                    let _ = slave.close();
                                 }
                             }
                         }
+                        guard.windows = retained_windows;
 
+                        let mut seen_geometries: HashSet<MonitorGeometry> = HashSet::new();
                         for (i, m) in monitors.iter().enumerate() {
-                            if !covered_indices.contains(&i) {
+                            let geometry = monitor_geometry(m);
+                            if !seen_geometries.insert(geometry) {
+                                continue;
+                            }
+
+                            if !covered_geometries.contains(&geometry) {
                                 let label = format!("lock-slave-{}", i);
                                 if let Some(win) = app_handle.get_webview_window(&label) {
                                     let _ = win.set_position(*m.position());
                                     let _ = win.set_size(tauri::Size::Physical(*m.size()));
                                     let _ = win.set_fullscreen(true);
+                                    if !guard.windows.contains(&label) {
+                                        guard.windows.push(label);
+                                    }
+                                    covered_geometries.insert(geometry);
                                 } else if let Some(new_label) =
                                     create_slave_window(&app_handle, m, args.as_ref(), i)
                                 {
                                     guard.windows.push(new_label);
+                                    covered_geometries.insert(geometry);
                                 }
                             }
                         }
@@ -2066,13 +2107,22 @@ async fn enter_lock_mode(
     let current_monitor = window.current_monitor().unwrap_or(None);
 
     let mut created_windows = Vec::new();
+    let mut seen_geometries: HashSet<MonitorGeometry> = HashSet::new();
+    let current_geometry = current_monitor.as_ref().map(monitor_geometry).or_else(|| {
+        window
+            .outer_position()
+            .ok()
+            .and_then(|position| monitor_geometry_for_position(&monitors, position))
+    });
 
     for (i, m) in monitors.iter().enumerate() {
-        if let Some(ref cm) = current_monitor {
-            // Basic position check to assume it's the same monitor
-            if m.position().x == cm.position().x && m.position().y == cm.position().y {
-                continue;
-            }
+        let geometry = monitor_geometry(m);
+        if !seen_geometries.insert(geometry) {
+            continue;
+        }
+
+        if current_geometry == Some(geometry) {
+            continue;
         }
 
         if let Some(label) = create_slave_window(&app, m, task.as_ref(), i) {

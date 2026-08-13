@@ -96,6 +96,9 @@ let lockScreenState = {
 let lockInputGuardInstalled = false;
 let lockKeyboardConfirming = false;
 let lockScreenEnding = false;
+let unlockHoldStartedAt = 0;
+let unlockHoldProgressFrame = null;
+let unlockHoldPointerId = null;
 
 let updateInfo = null;
 let isUpdating = false;
@@ -2069,6 +2072,7 @@ async function snoozeTask(minutes) {
 async function endLockScreen(snoozed = false) {
   if (!lockScreenState.active || lockScreenEnding) return;
   lockScreenEnding = true;
+  cancelUnlockPress();
   const restoreMainWindow = mainWindowVisibleBeforeLock;
   const restoreFloatingWindow = floatingWindowVisibleBeforeLock && settings.floatingWindowEnabled;
 
@@ -2215,40 +2219,98 @@ function installLockInputGuard() {
   window.addEventListener('mousedown', handleLockPointerInput, blockingOptions);
   window.addEventListener('click', handleLockPointerInput, blockingOptions);
   window.addEventListener('dblclick', handleLockPointerInput, blockingOptions);
-  window.addEventListener('blur', () => {
-    if (lockScreenState.active) {
-      cancelUnlockPress();
-    }
-  });
 }
 
-function startUnlockPress() {
+function updateUnlockProgress() {
+  if (!lockScreenState.unlockTimer) return;
+
+  const progressBar = document.querySelector('.unlock-progress');
+  const elapsed = Date.now() - unlockHoldStartedAt;
+  lockScreenState.unlockProgress = Math.min(100, (elapsed / 3000) * 100);
+
+  if (progressBar) {
+    progressBar.style.width = `${lockScreenState.unlockProgress}%`;
+  }
+
+  if (lockScreenState.unlockProgress < 100) {
+    unlockHoldProgressFrame = requestAnimationFrame(updateUnlockProgress);
+  }
+}
+
+function finishUnlockPress() {
+  if (unlockHoldProgressFrame) {
+    cancelAnimationFrame(unlockHoldProgressFrame);
+    unlockHoldProgressFrame = null;
+  }
+
+  lockScreenState.unlockTimer = null;
+  lockScreenState.unlockProgress = 100;
+
+  const progressBar = document.querySelector('.unlock-progress');
+  if (progressBar) {
+    progressBar.style.width = '100%';
+  }
+
+  endLockScreen();
+}
+
+function startUnlockPress(event) {
   if (lockScreenState.unlockTimer) return;
+  if (!lockScreenState.active || lockScreenState.waitingConfirm) return;
+
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (
+      event.currentTarget &&
+      typeof event.currentTarget.setPointerCapture === 'function' &&
+      typeof event.pointerId === 'number'
+    ) {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        unlockHoldPointerId = event.pointerId;
+      } catch (_) {
+        unlockHoldPointerId = null;
+      }
+    }
+  }
   
   lockScreenState.unlockProgress = 0;
+  unlockHoldStartedAt = Date.now();
   const btn = document.querySelector('.unlock-btn');
   const progressBar = document.querySelector('.unlock-progress');
   
   if (btn) btn.classList.add('pressing');
+  if (progressBar) progressBar.style.width = '0';
   
-  lockScreenState.unlockTimer = setInterval(() => {
-    lockScreenState.unlockProgress += 100 / 30;
-    
-    if (progressBar) {
-      progressBar.style.width = `${lockScreenState.unlockProgress}%`;
-    }
-    
-    if (lockScreenState.unlockProgress >= 100) {
-      cancelUnlockPress();
-      endLockScreen();
-    }
-  }, 100);
+  lockScreenState.unlockTimer = setTimeout(finishUnlockPress, 3000);
+  unlockHoldProgressFrame = requestAnimationFrame(updateUnlockProgress);
 }
 
-function cancelUnlockPress() {
+function cancelUnlockPress(event) {
+  if (
+    event &&
+    event.currentTarget &&
+    unlockHoldPointerId !== null &&
+    typeof event.currentTarget.releasePointerCapture === 'function'
+  ) {
+    try {
+      event.currentTarget.releasePointerCapture(unlockHoldPointerId);
+    } catch (_) {
+      // Pointer capture may already have been released by the webview.
+    }
+  }
+  unlockHoldPointerId = null;
+
   if (lockScreenState.unlockTimer) {
-    clearInterval(lockScreenState.unlockTimer);
+    clearTimeout(lockScreenState.unlockTimer);
     lockScreenState.unlockTimer = null;
+  }
+
+  if (unlockHoldProgressFrame) {
+    cancelAnimationFrame(unlockHoldProgressFrame);
+    unlockHoldProgressFrame = null;
   }
   
   lockScreenState.unlockProgress = 0;
@@ -3666,15 +3728,17 @@ function bindEvents() {
 
   const unlockBtn = document.getElementById('unlockBtn');
   if (unlockBtn) {
-    unlockBtn.addEventListener('mousedown', startUnlockPress);
-    unlockBtn.addEventListener('mouseup', cancelUnlockPress);
-    unlockBtn.addEventListener('mouseleave', cancelUnlockPress);
-    unlockBtn.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      startUnlockPress();
-    });
-    unlockBtn.addEventListener('touchend', cancelUnlockPress);
-    unlockBtn.addEventListener('touchcancel', cancelUnlockPress);
+    if (window.PointerEvent) {
+      unlockBtn.addEventListener('pointerdown', startUnlockPress);
+      unlockBtn.addEventListener('pointerup', cancelUnlockPress);
+      unlockBtn.addEventListener('pointercancel', cancelUnlockPress);
+    } else {
+      unlockBtn.addEventListener('mousedown', startUnlockPress);
+      unlockBtn.addEventListener('mouseup', cancelUnlockPress);
+      unlockBtn.addEventListener('touchstart', startUnlockPress, { passive: false });
+      unlockBtn.addEventListener('touchend', cancelUnlockPress);
+      unlockBtn.addEventListener('touchcancel', cancelUnlockPress);
+    }
   }
 
   const confirmBtn = document.getElementById('confirmBtn');
