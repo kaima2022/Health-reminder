@@ -47,6 +47,8 @@ jobs:
           - Lock-screen trigger delivery is more reliable for very short rest durations and zero-countdown boundaries.
           - Lock-screen countdown now guards keyboard, wheel, and background clicks.
           - Lock-screen exit is more robust around zero-countdown boundaries and avoids repeated lock/main UI transitions.
+          - Emergency unlock long-press is more reliable during lock-screen focus changes.
+          - Mirrored-display lock screens are deduplicated to avoid overlapping slave windows.
           - Windows media playback can be paused automatically when a break lock screen starts.
           - Notification dismissal and timer reset paths now have stronger reentrancy guards.
           - In-app version display now follows Tauri app metadata.

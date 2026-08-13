@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.4-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.5-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -191,6 +191,10 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.8.5 (2026-08-13)
+- **紧急解锁稳定性修复**（[#24](https://github.com/kaima2022/Health-reminder/issues/24)）：长按 3 秒紧急解锁改为 Pointer 捕获与固定 deadline 计时，减少锁屏窗口抢焦点或事件丢失时长按无效的问题。
+- **复制屏锁屏显示修复**（[#24](https://github.com/kaima2022/Health-reminder/issues/24)）：多显示器锁屏按显示器几何去重，双屏复制/镜像场景不会再为同一桌面坐标额外补出副屏锁屏窗口，减少倒计时错乱和无法退出。
 
 ### v1.8.4 (2026-08-13)
 - **锁屏退出可靠性修复**（[#21](https://github.com/kaima2022/Health-reminder/issues/21)）：收紧锁屏结束时的任务重置与后端锁屏态释放顺序，避免倒计时归零边界下锁屏界面和主界面反复切换。

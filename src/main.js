@@ -126,7 +126,7 @@ let floatingDragState = null;
 let floatingAutoHideState = { edge: null, hidden: false };
 let floatingPointerInside = false;
 let floatingSuppressClickUntil = 0;
-let appVersion = '1.8.1';
+let appVersion = '1.8.5';
 
 let domCache = null;
 let isUiSuspended = false;

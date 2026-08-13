@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.4-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.5-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -190,6 +190,10 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.8.5 (2026-08-13)
+- **Emergency unlock reliability** ([#24](https://github.com/kaima2022/Health-reminder/issues/24)): The 3-second emergency unlock now uses pointer capture and a fixed deadline timer, reducing cases where focus changes or dropped pointer events make the long press fail.
+- **Mirrored-display lock-screen fix** ([#24](https://github.com/kaima2022/Health-reminder/issues/24)): Multi-monitor lock windows are now deduplicated by monitor geometry so duplicated/mirrored displays no longer create overlapping slave lock windows for the same desktop area.
 
 ### v1.8.4 (2026-08-13)
 - **Lock-screen exit reliability** ([#21](https://github.com/kaima2022/Health-reminder/issues/21)): Tightened the ordering between task reset and backend lock-screen release so the app no longer bounces between the lock screen and main UI around zero-countdown boundaries.
