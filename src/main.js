@@ -81,6 +81,7 @@ let isPaused = false;
 let isIdle = false;  // 当前是否处于空闲状态
 let workStartTime = Date.now();
 let activePopup = null;
+let notificationDismissing = false;
 let taskQueue = []; // 任务队列
 let recentTriggeredTasks = {};
 let triggerHandlingPromises = new Map();
@@ -1323,7 +1324,7 @@ function isReminderTaskVisible(taskId) {
 }
 
 function shouldRecoverZeroCountdownTrigger(info, task) {
-  if (!task || !info.enabled || info.task_paused || info.snoozed || isPaused || isIdle) {
+  if (!task || !info.enabled || info.task_paused || info.snoozed || isPaused || isIdle || lockScreenEnding) {
     return false;
   }
   return Number(info.remaining) === 0 && !isReminderTaskVisible(task.id);
@@ -1950,6 +1951,7 @@ async function startLockScreen(task, mergedTasks = []) {
   if (document.activeElement && typeof document.activeElement.blur === 'function') {
     document.activeElement.blur();
   }
+  invoke('pause_playing_media_sessions').catch(console.error);
   try {
     invoke('timer_set_lock_screen_active', { active: true }).catch(console.error);
   } catch (e) {
@@ -2070,39 +2072,44 @@ async function endLockScreen(snoozed = false) {
   const restoreMainWindow = mainWindowVisibleBeforeLock;
   const restoreFloatingWindow = floatingWindowVisibleBeforeLock && settings.floatingWindowEnabled;
 
-  // 通知后端锁屏模式结束
-  invoke('timer_set_lock_screen_active', { active: false }).catch(console.error);
-
-  if (!snoozed) {
-    // 重置所有合并的任务
-    const idsToReset = lockScreenState.mergedTaskIds || (lockScreenState.task ? [lockScreenState.task.id] : []);
-    
-    // 从队列中移除已合并的任务，防止解锁后再次弹窗
-    taskQueue = taskQueue.filter(t => !idsToReset.includes(t.id));
-
-    idsToReset.forEach(id => {
-      if (id === 'sit') stats.sitBreaks++;
-      if (id === 'water') stats.waterCups++;
-      resetTask(id);
-    });
-    
-    saveStats();
-  }
-
   try {
-    await invoke('exit_lock_mode', { restoreVisible: restoreMainWindow });
-    if (restoreFloatingWindow) {
-      invoke('show_floating_window').catch(console.error);
-    }
-  } catch (e) {
-    console.error('Failed to exit lock mode', e);
-  }
+    try {
+      if (!snoozed) {
+        const idsToReset = lockScreenState.mergedTaskIds || (lockScreenState.task ? [lockScreenState.task.id] : []);
 
-  lockScreenState.active = false;
-  lockScreenState.waitingConfirm = false;
-  lockKeyboardConfirming = false;
-  lockScreenEnding = false;
-  processNextTask();
+        taskQueue = taskQueue.filter(t => !idsToReset.includes(t.id));
+
+        await Promise.all(idsToReset.map(id => {
+          if (id === 'sit') stats.sitBreaks++;
+          if (id === 'water') stats.waterCups++;
+          return resetTask(id, { refresh: false, render: false });
+        }));
+        await refreshCountdownsFromBackend({ render: false }).catch(console.error);
+
+        saveStats();
+      }
+    } catch (e) {
+      console.error('Failed to reset lock screen tasks', e);
+    }
+
+    await invoke('timer_set_lock_screen_active', { active: false }).catch(console.error);
+
+    try {
+      await invoke('exit_lock_mode', { restoreVisible: restoreMainWindow });
+      if (restoreFloatingWindow) {
+        invoke('show_floating_window').catch(console.error);
+      }
+    } catch (e) {
+      console.error('Failed to exit lock mode', e);
+    }
+
+    lockScreenState.active = false;
+    lockScreenState.waitingConfirm = false;
+    lockKeyboardConfirming = false;
+    processNextTask();
+  } finally {
+    lockScreenEnding = false;
+  }
 }
 
 function updateLockScreenTimer() {
@@ -2262,27 +2269,30 @@ function processNextTask() {
   }
 }
 
-function dismissNotification() {
-  if (!activePopup) return;
-  
-  // 点击“我知道了”仅记录统计数据，不再负责计时重置（重置已在触发时提前完成）
-  // 修正：上面的注释是旧的，现在改为在此处重置（或在触发时重置，看逻辑）
-  // 根据新逻辑，我们在结束时重置
-  
-  const idsToReset = activePopup.mergedTaskIds || [activePopup.id];
-  
-  // 从队列中移除已合并的任务
-  taskQueue = taskQueue.filter(t => !idsToReset.includes(t.id));
+async function dismissNotification() {
+  if (!activePopup || notificationDismissing) return;
+  notificationDismissing = true;
 
-  idsToReset.forEach(id => {
-    if (id === 'sit') stats.sitBreaks++;
-    if (id === 'water') stats.waterCups++;
-    resetTask(id);
-  });
-  
-  activePopup = null;
-  saveStats();
-  processNextTask();
+  try {
+    const popup = activePopup;
+    const idsToReset = popup.mergedTaskIds || [popup.id];
+
+    // 从队列中移除已合并的任务
+    taskQueue = taskQueue.filter(t => !idsToReset.includes(t.id));
+
+    await Promise.all(idsToReset.map(id => {
+      if (id === 'sit') stats.sitBreaks++;
+      if (id === 'water') stats.waterCups++;
+      return resetTask(id, { refresh: false, render: false });
+    }));
+    await refreshCountdownsFromBackend({ render: false }).catch(console.error);
+
+    activePopup = null;
+    saveStats();
+    processNextTask();
+  } finally {
+    notificationDismissing = false;
+  }
 }
 
 function addTask() {
@@ -2309,7 +2319,8 @@ function removeTask(id) {
   renderFullUI();
 }
 
-function resetTask(id) {
+async function resetTask(id, options = {}) {
+  const { refresh = true, render = true } = options;
   const task = settings.tasks.find(t => t.id === id);
   if (task) {
     if (!isDailyTask(task)) {
@@ -2321,11 +2332,18 @@ function resetTask(id) {
       snoozedStatus[id].remaining = 0;
     }
     // 通知后端重置该任务
-    invoke('timer_reset_task', { taskId: id })
-      .then(() => refreshCountdownsFromBackend({ render: false }))
-      .catch(console.error);
-    updateTrayTooltip(true);
-    updateLiveValues();
+    try {
+      await invoke('timer_reset_task', { taskId: id });
+      if (refresh) {
+        await refreshCountdownsFromBackend({ render: false });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    if (render) {
+      updateTrayTooltip(true);
+      updateLiveValues();
+    }
   }
 }
 

@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.3-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.4-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -191,6 +191,11 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.8.4 (2026-08-13)
+- **锁屏退出可靠性修复**（[#21](https://github.com/kaima2022/Health-reminder/issues/21)）：收紧锁屏结束时的任务重置与后端锁屏态释放顺序，避免倒计时归零边界下锁屏界面和主界面反复切换。
+- **媒体播放联动**（[#22](https://github.com/kaima2022/Health-reminder/issues/22)）：Windows 上进入锁屏前会尝试暂停正在播放的媒体会话，减少休息时视频或音乐继续播放。
+- **鲁棒性维护**：通知确认增加防重入保护，批量重置任务后统一刷新倒计时；Rust 后端通过 clippy 严格检查并清理静态告警。
 
 ### v1.8.3 (2026-08-12)
 - **安全维护**（[CVE-2026-31812](https://github.com/advisories/GHSA-6xvm-j4wr-6v98)）：将 `quinn-proto` 从 `0.11.13` 更新到 `0.11.14`，修复 QUIC transport parameter 解析异常可能导致的远程拒绝服务风险。

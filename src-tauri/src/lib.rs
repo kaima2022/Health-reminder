@@ -392,11 +392,7 @@ fn calculate_timer_countdown(
         let elapsed = effective_now
             .saturating_duration_since(timer.reset_time)
             .as_secs();
-        if elapsed >= total_secs {
-            0
-        } else {
-            total_secs - elapsed
-        }
+        total_secs.saturating_sub(elapsed)
     };
 
     let snooze_remaining = if timer.reset_time > effective_now {
@@ -568,7 +564,7 @@ fn start_session_monitor(app_handle: tauri::AppHandle) {
         )
         .unwrap_or(HWND::default());
 
-        if hwnd.0 != std::ptr::null_mut() {
+        if !hwnd.0.is_null() {
             let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
 
             let mut msg = MSG::default();
@@ -1163,6 +1159,64 @@ fn timer_set_lock_screen_active(active: bool) {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn pause_playing_media_sessions_impl() -> Result<bool, String> {
+    use windows::Media::Control::{
+        GlobalSystemMediaTransportControlsSessionManager,
+        GlobalSystemMediaTransportControlsSessionPlaybackStatus,
+    };
+
+    let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
+        .map_err(|e| format!("failed to request media session manager: {e}"))?
+        .get()
+        .map_err(|e| format!("failed to get media session manager: {e}"))?;
+    let sessions = manager
+        .GetSessions()
+        .map_err(|e| format!("failed to get media sessions: {e}"))?;
+    let count = sessions
+        .Size()
+        .map_err(|e| format!("failed to count media sessions: {e}"))?;
+    let mut paused_any = false;
+
+    for index in 0..count {
+        let Ok(session) = sessions.GetAt(index) else {
+            continue;
+        };
+        let Ok(playback_info) = session.GetPlaybackInfo() else {
+            continue;
+        };
+        if playback_info.PlaybackStatus().ok()
+            != Some(GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing)
+        {
+            continue;
+        }
+        let pause_enabled = playback_info
+            .Controls()
+            .and_then(|controls| controls.IsPauseEnabled())
+            .unwrap_or(true);
+        if pause_enabled
+            && session
+                .TryPauseAsync()
+                .and_then(|op| op.get())
+                .unwrap_or(false)
+        {
+            paused_any = true;
+        }
+    }
+
+    Ok(paused_any)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn pause_playing_media_sessions_impl() -> Result<bool, String> {
+    Ok(false)
+}
+
+#[tauri::command]
+fn pause_playing_media_sessions() -> Result<bool, String> {
+    pause_playing_media_sessions_impl()
+}
+
 #[tauri::command]
 fn set_idle_threshold(seconds: u64) {
     let mut state = get_timer_state().lock().unwrap();
@@ -1290,15 +1344,13 @@ fn start_timer_thread(app_handle: AppHandle) {
                             if !covered_indices.contains(&i) {
                                 let label = format!("lock-slave-{}", i);
                                 if let Some(win) = app_handle.get_webview_window(&label) {
-                                    let _ = win.set_position(m.position().clone());
-                                    let _ = win.set_size(tauri::Size::Physical(m.size().clone()));
+                                    let _ = win.set_position(*m.position());
+                                    let _ = win.set_size(tauri::Size::Physical(*m.size()));
                                     let _ = win.set_fullscreen(true);
-                                } else {
-                                    if let Some(new_label) =
-                                        create_slave_window(&app_handle, m, args.as_ref(), i)
-                                    {
-                                        guard.windows.push(new_label);
-                                    }
+                                } else if let Some(new_label) =
+                                    create_slave_window(&app_handle, m, args.as_ref(), i)
+                                {
+                                    guard.windows.push(new_label);
                                 }
                             }
                         }
@@ -1945,8 +1997,8 @@ fn create_slave_window(
             .focused(true)
             .build()
     {
-        let _ = slave.set_position(monitor.position().clone());
-        let _ = slave.set_size(tauri::Size::Physical(monitor.size().clone()));
+        let _ = slave.set_position(*monitor.position());
+        let _ = slave.set_size(tauri::Size::Physical(*monitor.size()));
         let _ = slave.show();
         let _ = slave.set_focus();
         let _ = slave.set_fullscreen(true);
@@ -2121,6 +2173,7 @@ pub fn run() {
             update_tray_language,
             enter_lock_mode,
             exit_lock_mode,
+            pause_playing_media_sessions,
             sync_tasks,
             timer_pause,
             timer_resume,

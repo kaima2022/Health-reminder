@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.3-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.4-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -190,6 +190,11 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.8.4 (2026-08-13)
+- **Lock-screen exit reliability** ([#21](https://github.com/kaima2022/Health-reminder/issues/21)): Tightened the ordering between task reset and backend lock-screen release so the app no longer bounces between the lock screen and main UI around zero-countdown boundaries.
+- **Media playback coordination** ([#22](https://github.com/kaima2022/Health-reminder/issues/22)): On Windows, active media sessions are paused before the break lock screen starts, reducing cases where video or music keeps playing during a rest.
+- **Robustness maintenance**: Notification dismissal now guards against repeated clicks, batched task resets refresh countdowns once, and the Rust backend is clean under strict clippy checks.
 
 ### v1.8.3 (2026-08-12)
 - **Security maintenance** ([CVE-2026-31812](https://github.com/advisories/GHSA-6xvm-j4wr-6v98)): Updated `quinn-proto` from `0.11.13` to `0.11.14` to fix a remote denial-of-service risk in QUIC transport parameter parsing.
