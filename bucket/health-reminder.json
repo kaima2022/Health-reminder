@@ -7,7 +7,7 @@
   "architecture": {
     "64bit": {
       "url": "https://github.com/kaima2022/Health-reminder/releases/download/v1.8.4/health-reminder_1.8.4_x64-setup.exe",
-      "hash": "skip"
+      "hash": "8ed781570c80558a93c6a2768960956e47b687b6e99420eaaa211072e66f6f50"
     }
   },
   "installer": {
