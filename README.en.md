@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.5-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.6-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -190,6 +190,10 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.8.6 (2026-08-20)
+- **Lock-screen media pause fix** ([#25](https://github.com/kaima2022/Health-reminder/issues/25)): On Windows, the app now pauses playing browser media sessions before the lock screen starts and only sends pause commands to local player windows that are confirmed to be producing audio, preventing already-paused players from being toggled back into playback.
+- **Lock-screen startup robustness**: Media pause coordination has a short timeout so a slow system media API or player response cannot delay the lock screen.
 
 ### v1.8.5 (2026-08-13)
 - **Emergency unlock reliability** ([#24](https://github.com/kaima2022/Health-reminder/issues/24)): The 3-second emergency unlock now uses pointer capture and a fixed deadline timer, reducing cases where focus changes or dropped pointer events make the long press fail.

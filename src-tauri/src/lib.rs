@@ -489,9 +489,9 @@ mod tests {
 
         let frozen_remaining = timer.frozen_remaining.unwrap();
         let later = now + Duration::from_secs(300);
-        let reported_remaining = timer.frozen_remaining.unwrap_or_else(|| {
-            calculate_timer_countdown(&timer, later, false).0
-        });
+        let reported_remaining = timer
+            .frozen_remaining
+            .unwrap_or_else(|| calculate_timer_countdown(&timer, later, false).0);
 
         assert_eq!(frozen_remaining, 44 * 60);
         assert_eq!(reported_remaining, frozen_remaining);
@@ -1181,7 +1181,7 @@ fn timer_set_lock_screen_active(active: bool) {
 }
 
 #[cfg(target_os = "windows")]
-fn pause_playing_media_sessions_impl() -> Result<bool, String> {
+fn pause_playing_media_sessions_with_gsmtc() -> Result<bool, String> {
     use windows::Media::Control::{
         GlobalSystemMediaTransportControlsSessionManager,
         GlobalSystemMediaTransportControlsSessionPlaybackStatus,
@@ -1226,6 +1226,316 @@ fn pause_playing_media_sessions_impl() -> Result<bool, String> {
     }
 
     Ok(paused_any)
+}
+
+#[cfg(target_os = "windows")]
+fn send_media_pause_app_command_to_window(
+    hwnd: windows::Win32::Foundation::HWND,
+) -> Result<bool, String> {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SendMessageTimeoutW, SMTO_ABORTIFHUNG, WM_APPCOMMAND,
+    };
+
+    const APPCOMMAND_MEDIA_PAUSE: isize = 47;
+    const APPCOMMAND_LPARAM_SHIFT: usize = 16;
+
+    let command = LPARAM(APPCOMMAND_MEDIA_PAUSE << APPCOMMAND_LPARAM_SHIFT);
+    let mut result = 0usize;
+    let sent = unsafe {
+        SendMessageTimeoutW(
+            hwnd,
+            WM_APPCOMMAND,
+            WPARAM(0),
+            command,
+            SMTO_ABORTIFHUNG,
+            200,
+            Some(&mut result),
+        )
+    };
+
+    if sent.0 == 0 {
+        Err("failed to send media pause app command".to_string())
+    } else {
+        Ok(true)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn active_audio_process_ids() -> Result<HashSet<u32>, String> {
+    use windows::core::Interface;
+    use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
+    use windows::Win32::Media::Audio::{
+        eConsole, eRender, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2,
+        IMMDeviceEnumerator, MMDeviceEnumerator,
+    };
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
+    };
+
+    const RPC_E_CHANGED_MODE: i32 = 0x80010106u32 as i32;
+    const ACTIVE_AUDIO_PEAK_THRESHOLD: f32 = 0.0001;
+
+    let coinit = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+    let should_uninitialize = coinit.is_ok();
+    if coinit.is_err() && coinit.0 != RPC_E_CHANGED_MODE {
+        return Err(format!(
+            "failed to initialize COM for audio sessions: {coinit:?}"
+        ));
+    }
+
+    let result = unsafe {
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
+                .map_err(|e| format!("failed to create audio device enumerator: {e}"))?;
+        let device = enumerator
+            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .map_err(|e| format!("failed to get default audio endpoint: {e}"))?;
+        let session_manager: IAudioSessionManager2 = device
+            .Activate(CLSCTX_ALL, None)
+            .map_err(|e| format!("failed to activate audio session manager: {e}"))?;
+        let sessions = session_manager
+            .GetSessionEnumerator()
+            .map_err(|e| format!("failed to enumerate audio sessions: {e}"))?;
+        let count = sessions
+            .GetCount()
+            .map_err(|e| format!("failed to count audio sessions: {e}"))?;
+        let mut process_ids = HashSet::new();
+
+        for index in 0..count {
+            let Ok(session) = sessions.GetSession(index) else {
+                continue;
+            };
+            if session.GetState().ok() != Some(AudioSessionStateActive) {
+                continue;
+            }
+            let peak = session
+                .cast::<IAudioMeterInformation>()
+                .and_then(|meter| meter.GetPeakValue())
+                .unwrap_or(0.0);
+            if peak <= ACTIVE_AUDIO_PEAK_THRESHOLD {
+                continue;
+            }
+            let Ok(session2) = session.cast::<IAudioSessionControl2>() else {
+                continue;
+            };
+            let Ok(process_id) = session2.GetProcessId() else {
+                continue;
+            };
+            if process_id != 0 {
+                process_ids.insert(process_id);
+            }
+        }
+
+        Ok::<_, String>(process_ids)
+    };
+
+    if should_uninitialize {
+        unsafe {
+            CoUninitialize();
+        }
+    }
+
+    result
+}
+
+#[cfg(target_os = "windows")]
+fn lower_process_name(process_id: u32) -> Option<String> {
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::{CloseHandle, BOOL};
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    let handle =
+        unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, BOOL(0), process_id) }.ok()?;
+    let mut buffer = vec![0u16; 32768];
+    let mut len = buffer.len() as u32;
+    let query_result = unsafe {
+        QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_WIN32,
+            PWSTR(buffer.as_mut_ptr()),
+            &mut len,
+        )
+    };
+    let _ = unsafe { CloseHandle(handle) };
+    if query_result.is_err() || len == 0 {
+        return None;
+    }
+
+    let image_path = String::from_utf16_lossy(&buffer[..len as usize]);
+    PathBuf::from(image_path)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_lowercase())
+}
+
+#[cfg(target_os = "windows")]
+fn lower_window_text(hwnd: windows::Win32::Foundation::HWND) -> String {
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowTextLengthW, GetWindowTextW};
+
+    let len = unsafe { GetWindowTextLengthW(hwnd) };
+    if len <= 0 {
+        return String::new();
+    }
+
+    let mut buffer = vec![0u16; len as usize + 1];
+    let read = unsafe { GetWindowTextW(hwnd, &mut buffer) };
+    if read <= 0 {
+        String::new()
+    } else {
+        String::from_utf16_lossy(&buffer[..read as usize]).to_lowercase()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn lower_window_class(hwnd: windows::Win32::Foundation::HWND) -> String {
+    use windows::Win32::UI::WindowsAndMessaging::GetClassNameW;
+
+    let mut buffer = vec![0u16; 256];
+    let read = unsafe { GetClassNameW(hwnd, &mut buffer) };
+    if read <= 0 {
+        String::new()
+    } else {
+        String::from_utf16_lossy(&buffer[..read as usize]).to_lowercase()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn looks_like_local_player(process_name: &str, title: &str, class_name: &str) -> bool {
+    const PLAYER_PROCESS_MARKERS: &[&str] = &[
+        "vlc",
+        "potplayer",
+        "mpv",
+        "mpc-hc",
+        "mpc-be",
+        "wmplayer",
+        "foobar2000",
+        "musicbee",
+        "aimp",
+        "cloudmusic",
+        "qqmusic",
+        "yesplaymusic",
+        "video.ui",
+        "microsoft.media.player",
+    ];
+    const PLAYER_WINDOW_MARKERS: &[&str] = &[
+        "vlc",
+        "potplayer",
+        "mpv",
+        "media player",
+        "windows media player",
+        "foobar2000",
+        "musicbee",
+        "aimp",
+        "网易云音乐",
+        "qqmusic",
+    ];
+
+    PLAYER_PROCESS_MARKERS
+        .iter()
+        .any(|marker| process_name.contains(marker))
+        || PLAYER_WINDOW_MARKERS
+            .iter()
+            .any(|marker| title.contains(marker) || class_name.contains(marker))
+}
+
+#[cfg(target_os = "windows")]
+struct PlayerWindowSearch {
+    active_process_ids: HashSet<u32>,
+    windows: Vec<windows::Win32::Foundation::HWND>,
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn enum_active_local_player_windows(
+    hwnd: windows::Win32::Foundation::HWND,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::BOOL {
+    use windows::Win32::Foundation::BOOL;
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindowVisible};
+
+    if !IsWindowVisible(hwnd).as_bool() {
+        return BOOL(1);
+    }
+
+    let mut process_id = 0u32;
+    GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+    let search = &mut *(lparam.0 as *mut PlayerWindowSearch);
+    if !search.active_process_ids.contains(&process_id) {
+        return BOOL(1);
+    }
+
+    let process_name = lower_process_name(process_id).unwrap_or_default();
+    let title = lower_window_text(hwnd);
+    let class_name = lower_window_class(hwnd);
+    if looks_like_local_player(&process_name, &title, &class_name) {
+        search.windows.push(hwnd);
+    }
+
+    BOOL(1)
+}
+
+#[cfg(target_os = "windows")]
+fn find_active_local_player_windows(
+    active_process_ids: HashSet<u32>,
+) -> Vec<windows::Win32::Foundation::HWND> {
+    use windows::Win32::Foundation::LPARAM;
+    use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
+
+    if active_process_ids.is_empty() {
+        return Vec::new();
+    }
+
+    let mut search = PlayerWindowSearch {
+        active_process_ids,
+        windows: Vec::new(),
+    };
+    let _ = unsafe {
+        EnumWindows(
+            Some(enum_active_local_player_windows),
+            LPARAM(&mut search as *mut PlayerWindowSearch as isize),
+        )
+    };
+    search.windows
+}
+
+#[cfg(target_os = "windows")]
+fn pause_active_local_player_windows() -> Result<bool, String> {
+    let active_process_ids = active_audio_process_ids()?;
+    let windows = find_active_local_player_windows(active_process_ids);
+    let mut paused_any = false;
+
+    for hwnd in windows {
+        if send_media_pause_app_command_to_window(hwnd).unwrap_or(false) {
+            paused_any = true;
+        }
+    }
+
+    Ok(paused_any)
+}
+
+#[cfg(target_os = "windows")]
+fn pause_playing_media_sessions_impl() -> Result<bool, String> {
+    let gsmtc_result = pause_playing_media_sessions_with_gsmtc();
+    let player_fallback_result = pause_active_local_player_windows();
+
+    let paused_any = gsmtc_result.as_ref().copied().unwrap_or(false)
+        || player_fallback_result.as_ref().copied().unwrap_or(false);
+
+    if paused_any {
+        Ok(true)
+    } else {
+        let errors: Vec<String> = [gsmtc_result.err(), player_fallback_result.err()]
+            .into_iter()
+            .flatten()
+            .collect();
+        if errors.is_empty() {
+            Ok(false)
+        } else {
+            Err(errors.join("; "))
+        }
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -1812,7 +2122,11 @@ fn get_global_cursor_position() -> Option<(i32, i32)> {
     None
 }
 
-fn cursor_should_reveal_floating(edge: &str, watch: &FloatingRevealWatch, cursor: (i32, i32)) -> bool {
+fn cursor_should_reveal_floating(
+    edge: &str,
+    watch: &FloatingRevealWatch,
+    cursor: (i32, i32),
+) -> bool {
     let (cursor_x, cursor_y) = cursor;
     let left = watch.monitor.x;
     let top = watch.monitor.y;
@@ -1868,33 +2182,31 @@ fn start_floating_reveal_watch(
     };
     let app_for_thread = app.clone();
 
-    thread::spawn(move || {
-        loop {
-            thread::sleep(Duration::from_millis(80));
-            let current_watch = {
-                let guard = shared_state.lock().unwrap();
-                if guard.generation != generation {
-                    return;
-                }
-                guard.watch.clone()
-            };
-            let Some(watch) = current_watch else {
-                return;
-            };
-            let Some(cursor) = get_global_cursor_position() else {
-                continue;
-            };
-
-            if cursor_should_reveal_floating(&watch.edge, &watch, cursor) {
-                {
-                    let mut guard = shared_state.lock().unwrap();
-                    if guard.generation == generation {
-                        guard.watch = None;
-                    }
-                }
-                reveal_floating_window_from_watch(&app_for_thread, &watch);
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(80));
+        let current_watch = {
+            let guard = shared_state.lock().unwrap();
+            if guard.generation != generation {
                 return;
             }
+            guard.watch.clone()
+        };
+        let Some(watch) = current_watch else {
+            return;
+        };
+        let Some(cursor) = get_global_cursor_position() else {
+            continue;
+        };
+
+        if cursor_should_reveal_floating(&watch.edge, &watch, cursor) {
+            {
+                let mut guard = shared_state.lock().unwrap();
+                if guard.generation == generation {
+                    guard.watch = None;
+                }
+            }
+            reveal_floating_window_from_watch(&app_for_thread, &watch);
+            return;
         }
     });
 

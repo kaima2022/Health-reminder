@@ -49,7 +49,7 @@ jobs:
           - Lock-screen exit is more robust around zero-countdown boundaries and avoids repeated lock/main UI transitions.
           - Emergency unlock long-press is more reliable during lock-screen focus changes.
           - Mirrored-display lock screens are deduplicated to avoid overlapping slave windows.
-          - Windows media playback can be paused automatically when a break lock screen starts.
+          - Windows media playback pause now targets active browser sessions and local players that are actually producing audio, avoiding playback toggles for already-paused players.
           - Notification dismissal and timer reset paths now have stronger reentrancy guards.
           - In-app version display now follows Tauri app metadata.
           - Update check failures now show readable error text in both light and dark themes.

@@ -126,7 +126,7 @@ let floatingDragState = null;
 let floatingAutoHideState = { edge: null, hidden: false };
 let floatingPointerInside = false;
 let floatingSuppressClickUntil = 0;
-let appVersion = '1.8.5';
+let appVersion = '1.8.6';
 
 let domCache = null;
 let isUiSuspended = false;
@@ -1954,7 +1954,11 @@ async function startLockScreen(task, mergedTasks = []) {
   if (document.activeElement && typeof document.activeElement.blur === 'function') {
     document.activeElement.blur();
   }
-  invoke('pause_playing_media_sessions').catch(console.error);
+  const pauseMediaPromise = invoke('pause_playing_media_sessions').catch(console.error);
+  await Promise.race([
+    pauseMediaPromise,
+    new Promise(resolve => setTimeout(resolve, 800)),
+  ]);
   try {
     invoke('timer_set_lock_screen_active', { active: true }).catch(console.error);
   } catch (e) {

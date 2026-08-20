@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.5-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.6-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -191,6 +191,10 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.8.6 (2026-08-20)
+- **锁屏媒体暂停修复**（[#25](https://github.com/kaima2022/Health-reminder/issues/25)）：Windows 锁屏开始前会先暂停正在播放的浏览器媒体会话，并仅对确认正在出声的本地播放器窗口发送暂停命令，避免已暂停的播放器被误触发为播放状态。
+- **锁屏启动鲁棒性**：媒体暂停最多等待短时间，不会因为系统媒体 API 或播放器响应变慢而拖住锁屏启动。
 
 ### v1.8.5 (2026-08-13)
 - **紧急解锁稳定性修复**（[#24](https://github.com/kaima2022/Health-reminder/issues/24)）：长按 3 秒紧急解锁改为 Pointer 捕获与固定 deadline 计时，减少锁屏窗口抢焦点或事件丢失时长按无效的问题。
