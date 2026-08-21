@@ -1,0 +1,42 @@
+name: Star History
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 20 * * 0'
+
+permissions:
+  contents: write
+
+env:
+  NODE_OPTIONS: --use-system-ca
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      STAR_HISTORY_TOKEN: ${{ secrets.STAR_HISTORY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Explain missing token
+        if: env.STAR_HISTORY_TOKEN == ''
+        run: echo "Set repository secret STAR_HISTORY_TOKEN to refresh README star-history charts."
+
+      - name: Generate star-history charts
+        if: env.STAR_HISTORY_TOKEN != ''
+        run: npm run star-history
+
+      - name: Commit chart updates
+        if: env.STAR_HISTORY_TOKEN != ''
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add docs/star-history/*.svg
+          git diff --quiet --cached || git commit -m "docs: update star history chart [skip ci]"
+          git push

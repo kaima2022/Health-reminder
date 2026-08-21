@@ -353,11 +353,11 @@ npm run tauri build
 
 ## Star History
 
-<a href="https://star-history.com/#kaima2022/Health-reminder&Date">
+<a href="https://github.com/kaima2022/Health-reminder/stargazers">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=kaima2022/Health-reminder&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=kaima2022/Health-reminder&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=kaima2022/Health-reminder&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="docs/star-history/star-history-dark.svg" />
+   <source media="(prefers-color-scheme: light)" srcset="docs/star-history/star-history-light.svg" />
+   <img alt="Star History Chart" src="docs/star-history/star-history-light.svg" />
  </picture>
 </a>
 
