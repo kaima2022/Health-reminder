@@ -353,11 +353,11 @@ npm run tauri build
 
 ## Star History
 
-<a href="https://github.com/kaima2022/Health-reminder/stargazers">
+<a href="https://www.star-history.com/?repos=kaima2022%2FHealth-reminder&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="docs/star-history/star-history-dark.svg" />
-   <source media="(prefers-color-scheme: light)" srcset="docs/star-history/star-history-light.svg" />
-   <img alt="Star History Chart" src="docs/star-history/star-history-light.svg" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=kaima2022/Health-reminder&type=date&theme=dark&legend=top-left&sealed_token=O4ShbOvSkHyW4hLO_VdgKgdn3r9KYEmNbq9hqN4QqEC1yRjXksaK4HyJ-D7UlyfrVI1khI43hkE8aKJFTOH_XVBeR-LdM0fF3PyIqwurQfaBMI48SUjcqUE55GRcyakegztNczzkBVCNqGOIIyhNZ-kRrcY9rSjyzbATRNpwSK7tEjTApR9j-8dMnHbn" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=kaima2022/Health-reminder&type=date&legend=top-left&sealed_token=O4ShbOvSkHyW4hLO_VdgKgdn3r9KYEmNbq9hqN4QqEC1yRjXksaK4HyJ-D7UlyfrVI1khI43hkE8aKJFTOH_XVBeR-LdM0fF3PyIqwurQfaBMI48SUjcqUE55GRcyakegztNczzkBVCNqGOIIyhNZ-kRrcY9rSjyzbATRNpwSK7tEjTApR9j-8dMnHbn" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=kaima2022/Health-reminder&type=date&legend=top-left&sealed_token=O4ShbOvSkHyW4hLO_VdgKgdn3r9KYEmNbq9hqN4QqEC1yRjXksaK4HyJ-D7UlyfrVI1khI43hkE8aKJFTOH_XVBeR-LdM0fF3PyIqwurQfaBMI48SUjcqUE55GRcyakegztNczzkBVCNqGOIIyhNZ-kRrcY9rSjyzbATRNpwSK7tEjTApR9j-8dMnHbn" />
  </picture>
 </a>
 
