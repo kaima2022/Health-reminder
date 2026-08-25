@@ -3,7 +3,6 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::BufReader;
 use std::path::PathBuf;
-#[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -1568,8 +1567,183 @@ struct IdleStatus {
     idle_start_timestamp: Option<i64>, // 空闲开始时间戳
 }
 
+fn enforce_main_lock_window(window: &WebviewWindow) {
+    if !window.is_visible().unwrap_or(false) {
+        let _ = window.show();
+    }
+    let _ = window.unminimize();
+    if !window.is_focused().unwrap_or(false) {
+        let _ = window.set_focus();
+    }
+    let _ = window.set_always_on_top(true);
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = window.set_focus();
+        let _ = window.set_always_on_top(true);
+    }
+}
+
+fn enforce_lock_slave_window(window: &WebviewWindow) {
+    if !window.is_visible().unwrap_or(false) {
+        let _ = window.show();
+    }
+    if !window.is_focused().unwrap_or(false) {
+        let _ = window.set_focus();
+    }
+    let _ = window.set_always_on_top(true);
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = window.set_fullscreen(true);
+        let _ = window.set_focus();
+        let _ = window.set_always_on_top(true);
+    }
+}
+
+fn enforce_main_lock_focus(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_always_on_top(true);
+        let _ = window.set_focus();
+    }
+}
+
+fn run_lock_watchdog_on_main_thread(app: &AppHandle, heal_windows: bool) {
+    let is_locked = get_timer_state().lock().unwrap().lock_screen_active;
+    if !is_locked {
+        return;
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        enforce_main_lock_window(&window);
+    }
+
+    let (windows, args, generation, active) = {
+        let lock_state = app.state::<LockState>();
+        let guard = lock_state.0.lock().unwrap();
+        (
+            guard.windows.clone(),
+            guard.args.clone(),
+            guard.generation,
+            guard.active,
+        )
+    };
+
+    if !active {
+        return;
+    }
+
+    for label in &windows {
+        if let Some(window) = app.get_webview_window(label) {
+            enforce_lock_slave_window(&window);
+        }
+    }
+
+    if !heal_windows {
+        return;
+    }
+
+    let Ok(monitors) = app.available_monitors() else {
+        return;
+    };
+
+    let mut covered_geometries: HashSet<MonitorGeometry> = HashSet::new();
+
+    if let Some(main_win) = app.get_webview_window("main") {
+        if let Ok(pos) = main_win.outer_position() {
+            if let Some(geometry) = monitor_geometry_for_position(&monitors, pos) {
+                covered_geometries.insert(geometry);
+            }
+        }
+    }
+
+    let mut retained_windows = Vec::new();
+    for label in &windows {
+        if let Some(slave) = app.get_webview_window(label) {
+            if let Ok(pos) = slave.outer_position() {
+                if let Some(geometry) = monitor_geometry_for_position(&monitors, pos) {
+                    if covered_geometries.insert(geometry) {
+                        retained_windows.push(label.clone());
+                    } else {
+                        let _ = slave.close();
+                    }
+                } else {
+                    let _ = slave.close();
+                }
+            } else {
+                let _ = slave.close();
+            }
+        }
+    }
+
+    let mut seen_geometries: HashSet<MonitorGeometry> = HashSet::new();
+    for (i, monitor) in monitors.iter().enumerate() {
+        let geometry = monitor_geometry(monitor);
+        if !seen_geometries.insert(geometry) {
+            continue;
+        }
+
+        if covered_geometries.contains(&geometry) {
+            continue;
+        }
+
+        let label = format!("lock-slave-{}", i);
+        if let Some(win) = app.get_webview_window(&label) {
+            let _ = win.set_position(*monitor.position());
+            let _ = win.set_size(tauri::Size::Physical(*monitor.size()));
+            let _ = win.set_fullscreen(true);
+            if !retained_windows.contains(&label) {
+                retained_windows.push(label);
+            }
+            covered_geometries.insert(geometry);
+        } else if let Some(new_label) = create_slave_window(app, monitor, args.as_ref(), i) {
+            retained_windows.push(new_label);
+            covered_geometries.insert(geometry);
+        }
+    }
+
+    let lock_state = app.state::<LockState>();
+    let mut guard = lock_state.0.lock().unwrap();
+    if guard.active && guard.generation == generation {
+        guard.windows = retained_windows;
+    }
+}
+
+fn schedule_lock_watchdog_on_main_thread(
+    app: &AppHandle,
+    heal_windows: bool,
+    pending: &Arc<AtomicBool>,
+    heal_requested: &Arc<AtomicBool>,
+) {
+    if heal_windows {
+        heal_requested.store(true, Ordering::SeqCst);
+    }
+
+    if pending.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let app_for_main = app.clone();
+    let pending_for_main = Arc::clone(pending);
+    let heal_requested_for_main = Arc::clone(heal_requested);
+    if app
+        .run_on_main_thread(move || {
+            let should_heal_windows = heal_requested_for_main.swap(false, Ordering::SeqCst);
+            run_lock_watchdog_on_main_thread(&app_for_main, should_heal_windows);
+            pending_for_main.store(false, Ordering::SeqCst);
+        })
+        .is_err()
+    {
+        pending.store(false, Ordering::SeqCst);
+    }
+}
+
 fn start_timer_thread(app_handle: AppHandle) {
     thread::spawn(move || {
+        let lock_watchdog_pending = Arc::new(AtomicBool::new(false));
+        let lock_watchdog_heal_requested = Arc::new(AtomicBool::new(false));
+
         // Linux uses shorter interval for better lock screen enforcement
         #[cfg(target_os = "linux")]
         let base_interval = Duration::from_millis(200);
@@ -1597,116 +1771,12 @@ fn start_timer_thread(app_handle: AppHandle) {
             // On other platforms, check every 1 second
             let is_locked = get_timer_state().lock().unwrap().lock_screen_active;
             if is_locked {
-                // 主窗口
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    if !window.is_visible().unwrap_or(false) {
-                        let _ = window.show();
-                    }
-                    let _ = window.unminimize();
-                    if !window.is_focused().unwrap_or(false) {
-                        let _ = window.set_focus();
-                    }
-                    let _ = window.set_always_on_top(true);
-
-                    // Linux-specific: Additional focus enforcement for both X11 and Wayland
-                    #[cfg(target_os = "linux")]
-                    {
-                        let _ = window.set_focus();
-                        // Try to grab keyboard focus more aggressively
-                        let _ = window.set_always_on_top(true);
-                    }
-                }
-
-                let lock_state = app_handle.state::<LockState>();
-                let mut guard = lock_state.0.lock().unwrap();
-                let windows = guard.windows.clone();
-                let args = guard.args.clone();
-
-                for label in &windows {
-                    if let Some(window) = app_handle.get_webview_window(label) {
-                        if !window.is_visible().unwrap_or(false) {
-                            let _ = window.show();
-                        }
-                        if !window.is_focused().unwrap_or(false) {
-                            let _ = window.set_focus();
-                        }
-                        let _ = window.set_always_on_top(true);
-
-                        // Linux-specific: Additional focus and fullscreen enforcement
-                        // Works for both X11 and Wayland (Tauri abstracts the differences)
-                        #[cfg(target_os = "linux")]
-                        {
-                            let _ = window.set_fullscreen(true);
-                            let _ = window.set_focus();
-                            let _ = window.set_always_on_top(true);
-                        }
-                    }
-                }
-
-                // Self-Healing (only run every 1 second to avoid performance issues)
-                if should_run_timer_logic {
-                    if let Ok(monitors) = app_handle.available_monitors() {
-                        let mut covered_geometries: HashSet<MonitorGeometry> = HashSet::new();
-
-                        if let Some(main_win) = app_handle.get_webview_window("main") {
-                            if let Ok(pos) = main_win.outer_position() {
-                                if let Some(geometry) =
-                                    monitor_geometry_for_position(&monitors, pos)
-                                {
-                                    covered_geometries.insert(geometry);
-                                }
-                            }
-                        }
-
-                        let mut retained_windows = Vec::new();
-                        for label in &windows {
-                            if let Some(slave) = app_handle.get_webview_window(label) {
-                                if let Ok(pos) = slave.outer_position() {
-                                    if let Some(geometry) =
-                                        monitor_geometry_for_position(&monitors, pos)
-                                    {
-                                        if covered_geometries.insert(geometry) {
-                                            retained_windows.push(label.clone());
-                                        } else {
-                                            let _ = slave.close();
-                                        }
-                                    } else {
-                                        let _ = slave.close();
-                                    }
-                                } else {
-                                    let _ = slave.close();
-                                }
-                            }
-                        }
-                        guard.windows = retained_windows;
-
-                        let mut seen_geometries: HashSet<MonitorGeometry> = HashSet::new();
-                        for (i, m) in monitors.iter().enumerate() {
-                            let geometry = monitor_geometry(m);
-                            if !seen_geometries.insert(geometry) {
-                                continue;
-                            }
-
-                            if !covered_geometries.contains(&geometry) {
-                                let label = format!("lock-slave-{}", i);
-                                if let Some(win) = app_handle.get_webview_window(&label) {
-                                    let _ = win.set_position(*m.position());
-                                    let _ = win.set_size(tauri::Size::Physical(*m.size()));
-                                    let _ = win.set_fullscreen(true);
-                                    if !guard.windows.contains(&label) {
-                                        guard.windows.push(label);
-                                    }
-                                    covered_geometries.insert(geometry);
-                                } else if let Some(new_label) =
-                                    create_slave_window(&app_handle, m, args.as_ref(), i)
-                                {
-                                    guard.windows.push(new_label);
-                                    covered_geometries.insert(geometry);
-                                }
-                            }
-                        }
-                    }
-                }
+                schedule_lock_watchdog_on_main_thread(
+                    &app_handle,
+                    should_run_timer_logic,
+                    &lock_watchdog_pending,
+                    &lock_watchdog_heal_requested,
+                );
             }
 
             // Reset counter and run timer logic
@@ -2372,6 +2442,8 @@ fn create_slave_window(
 }
 
 fn start_lock_focus_watch(app: tauri::AppHandle, generation: u64) {
+    let focus_pending = Arc::new(AtomicBool::new(false));
+
     thread::spawn(move || loop {
         thread::sleep(Duration::from_millis(650));
 
@@ -2385,10 +2457,30 @@ fn start_lock_focus_watch(app: tauri::AppHandle, generation: u64) {
             return;
         }
 
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-            let _ = window.set_always_on_top(true);
-            let _ = window.set_focus();
+        if focus_pending.swap(true, Ordering::SeqCst) {
+            continue;
+        }
+
+        let app_for_main = app.clone();
+        let pending_for_main = Arc::clone(&focus_pending);
+        if app
+            .run_on_main_thread(move || {
+                let should_continue = {
+                    let state = app_for_main.state::<LockState>();
+                    let guard = state.0.lock().unwrap();
+                    guard.active && guard.generation == generation
+                };
+
+                if should_continue {
+                    enforce_main_lock_focus(&app_for_main);
+                }
+
+                pending_for_main.store(false, Ordering::SeqCst);
+            })
+            .is_err()
+        {
+            focus_pending.store(false, Ordering::SeqCst);
+            return;
         }
     });
 }
