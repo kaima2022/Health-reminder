@@ -81,8 +81,13 @@ export default {
   // 设置
   settings: {
     title: '系统设置',
-    lockScreen: '强制休息锁屏',
-    lockScreenDesc: '提醒时锁定屏幕，确保真正休息',
+    lockScreen: '强制休息模式',
+    lockScreenDesc: '隐藏锁屏页的长按紧急解锁按钮，其他提醒行为不变',
+    lockMediaMode: '锁屏媒体处理',
+    lockMediaModeDesc: '仅视频模式只暂停 Windows 明确识别为视频的媒体',
+    lockMediaModeVideo: '仅暂停识别到的视频',
+    lockMediaModeAll: '暂停全部媒体',
+    lockMediaModeNone: '不暂停媒体',
     strictMode: '严格模式',
     strictModeDesc: '开启后锁屏界面将隐藏"紧急解锁"按钮，请谨慎开启',
     advanced: '高级设置',

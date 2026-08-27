@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.7-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.9.0-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -190,6 +190,10 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.9.0 (2026-08-28)
+- **Lock-screen reminder behavior** ([#27](https://github.com/kaima2022/Health-reminder/issues/27)): Due reminders now always open the full lock screen whether Force Rest Mode is enabled or not. Force Rest Mode now only hides the hold-to-unlock control and no longer changes the reminder surface.
+- **Lock-screen media policy** ([#27](https://github.com/kaima2022/Health-reminder/issues/27)): Added Do Not Pause, Pause Detected Video Only, and Pause All Media options. Media is unchanged by default; video-only mode pauses sessions explicitly reported as video by Windows while music and unknown media continue playing.
 
 ### v1.8.7 (2026-08-27)
 - **Linux lock-screen stability fix** ([#26](https://github.com/kaima2022/Health-reminder/issues/26)): Lock watchdog access to windows and monitors now runs on Tauri's main thread, preventing GTK/GDK memory corruption and crashes caused by background-thread calls.

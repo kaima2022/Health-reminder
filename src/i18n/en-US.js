@@ -81,8 +81,13 @@ export default {
   // Settings
   settings: {
     title: 'System Settings',
-    lockScreen: 'Force Rest Lock Screen',
-    lockScreenDesc: 'Lock screen when reminder triggers to ensure real rest',
+    lockScreen: 'Force Rest Mode',
+    lockScreenDesc: 'Hides the hold-to-unlock control while keeping all other reminder behavior unchanged',
+    lockMediaMode: 'Lock-screen media',
+    lockMediaModeDesc: 'Video-only mode pauses media explicitly identified as video by Windows',
+    lockMediaModeVideo: 'Pause detected video only',
+    lockMediaModeAll: 'Pause all media',
+    lockMediaModeNone: 'Do not pause media',
     strictMode: 'Strict Mode',
     strictModeDesc: 'Hides the emergency unlock button on lock screen, use with caution',
     advanced: 'Advanced Settings',

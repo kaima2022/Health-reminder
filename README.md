@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.7-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.9.0-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -191,6 +191,10 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.9.0 (2026-08-28)
+- **锁屏提醒行为修复**（[#27](https://github.com/kaima2022/Health-reminder/issues/27)）：无论是否开启强制休息模式，提醒到点后都会显示完整锁屏界面；强制休息模式现在只负责隐藏长按紧急解锁按钮，不再改变提醒方式。
+- **锁屏媒体策略**（[#27](https://github.com/kaima2022/Health-reminder/issues/27)）：新增“不暂停媒体”“仅暂停识别到的视频”和“暂停全部媒体”三档设置。默认不干预媒体；仅视频模式只暂停 Windows 明确报告为视频的会话，音乐和未知类型保持播放。
 
 ### v1.8.7 (2026-08-27)
 - **Linux 锁屏稳定性修复**（[#26](https://github.com/kaima2022/Health-reminder/issues/26)）：锁屏看门狗对窗口和显示器的访问统一切换到 Tauri 主线程，避免 Linux GTK/GDK 在后台线程调用时出现内存损坏和崩溃。

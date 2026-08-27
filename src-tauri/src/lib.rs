@@ -534,6 +534,25 @@ mod tests {
         assert_eq!(state.pending_triggers.len(), 1);
         assert_eq!(state.pending_triggers[0].id, "eye");
     }
+
+    #[test]
+    fn media_pause_mode_defaults_to_none() {
+        assert_eq!(parse_media_pause_mode(None), MediaPauseMode::None);
+        assert_eq!(
+            parse_media_pause_mode(Some("unexpected")),
+            MediaPauseMode::None
+        );
+    }
+
+    #[test]
+    fn media_pause_mode_all_requires_explicit_value() {
+        assert_eq!(parse_media_pause_mode(Some("all")), MediaPauseMode::All);
+    }
+
+    #[test]
+    fn media_pause_mode_video_requires_explicit_value() {
+        assert_eq!(parse_media_pause_mode(Some("video")), MediaPauseMode::Video);
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -1180,11 +1199,12 @@ fn timer_set_lock_screen_active(active: bool) {
 }
 
 #[cfg(target_os = "windows")]
-fn pause_playing_media_sessions_with_gsmtc() -> Result<bool, String> {
+fn pause_playing_media_sessions_with_gsmtc(mode: MediaPauseMode) -> Result<bool, String> {
     use windows::Media::Control::{
         GlobalSystemMediaTransportControlsSessionManager,
         GlobalSystemMediaTransportControlsSessionPlaybackStatus,
     };
+    use windows::Media::MediaPlaybackType;
 
     let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
         .map_err(|e| format!("failed to request media session manager: {e}"))?
@@ -1209,6 +1229,17 @@ fn pause_playing_media_sessions_with_gsmtc() -> Result<bool, String> {
             != Some(GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing)
         {
             continue;
+        }
+        if mode == MediaPauseMode::Video {
+            let playback_type = session
+                .TryGetMediaPropertiesAsync()
+                .and_then(|op| op.get())
+                .and_then(|properties| properties.PlaybackType())
+                .and_then(|playback_type| playback_type.Value())
+                .ok();
+            if playback_type != Some(MediaPlaybackType::Video) {
+                continue;
+            }
         }
         let pause_enabled = playback_info
             .Controls()
@@ -1514,9 +1545,32 @@ fn pause_active_local_player_windows() -> Result<bool, String> {
     Ok(paused_any)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MediaPauseMode {
+    None,
+    Video,
+    All,
+}
+
+fn parse_media_pause_mode(mode: Option<&str>) -> MediaPauseMode {
+    match mode {
+        Some("video") => MediaPauseMode::Video,
+        Some("all") => MediaPauseMode::All,
+        _ => MediaPauseMode::None,
+    }
+}
+
 #[cfg(target_os = "windows")]
-fn pause_playing_media_sessions_impl() -> Result<bool, String> {
-    let gsmtc_result = pause_playing_media_sessions_with_gsmtc();
+fn pause_playing_media_sessions_impl(mode: MediaPauseMode) -> Result<bool, String> {
+    if mode == MediaPauseMode::None {
+        return Ok(false);
+    }
+
+    let gsmtc_result = pause_playing_media_sessions_with_gsmtc(mode);
+    if mode == MediaPauseMode::Video {
+        return gsmtc_result;
+    }
+
     let player_fallback_result = pause_active_local_player_windows();
 
     let paused_any = gsmtc_result.as_ref().copied().unwrap_or(false)
@@ -1538,13 +1592,14 @@ fn pause_playing_media_sessions_impl() -> Result<bool, String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn pause_playing_media_sessions_impl() -> Result<bool, String> {
+fn pause_playing_media_sessions_impl(_mode: MediaPauseMode) -> Result<bool, String> {
     Ok(false)
 }
 
 #[tauri::command]
-fn pause_playing_media_sessions() -> Result<bool, String> {
-    pause_playing_media_sessions_impl()
+fn pause_playing_media_sessions(mode: Option<String>) -> Result<bool, String> {
+    let mode = parse_media_pause_mode(mode.as_deref());
+    pause_playing_media_sessions_impl(mode)
 }
 
 #[tauri::command]

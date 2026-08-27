@@ -39,15 +39,14 @@ let settings = {
   autoStart: false,
   silentAutoStart: true,
   lockScreenEnabled: false,
+  lockMediaMode: 'none',
   lockDuration: 20,
   idleThreshold: 300,  // 空闲阈值，秒，默认 5 分钟
   autoUnlock: true,    // 倒计时结束自动解锁
-  strictMode: false,   // 严格模式：隐藏紧急解锁按钮
   snoozeMinutes: 5,    // 推迟时间（分钟）
   resetOnIdle: true,   // 空闲时重置所有任务
   advancedSettingsOpen: false, // 高级设置展开状态
   maxSnoozeCount: 1,   // 最大推迟次数
-  allowStrictSnooze: false, // 严格模式下是否允许推迟
   enableMerge: true,  // 是否合并临近任务
   mergeThreshold: 60,  // 合并阈值（秒）
   language: 'zh-CN',   // 界面语言
@@ -89,6 +88,8 @@ let lockScreenState = {
   active: false,
   remaining: 0,
   task: null,
+  strictMode: false,
+  allowStrictSnooze: true,
   unlockProgress: 0,
   unlockTimer: null,
   waitingConfirm: false,
@@ -1616,6 +1617,8 @@ async function init() {
       active: true,
       remaining: duration,
       task: task,
+      strictMode: settings.strictMode,
+      allowStrictSnooze: settings.allowStrictSnooze,
       unlockProgress: 0,
       unlockTimer: null,
       waitingConfirm: false,
@@ -1864,8 +1867,14 @@ async function loadSettings() {
     if (saved) {
       const parsed = JSON.parse(saved.replace(/^\uFEFF/, ''));
       settings = { ...settings, ...parsed };
+      if (parsed.strictMode && !parsed.lockScreenEnabled) {
+        settings.lockScreenEnabled = true;
+      }
       if (!Object.prototype.hasOwnProperty.call(parsed, 'floatingWindowBgColor')) {
         applyFloatingThemePreset(settings.floatingWindowTheme || 'blue');
+      }
+      if (!['none', 'video', 'all'].includes(settings.lockMediaMode)) {
+        settings.lockMediaMode = 'none';
       }
       normalizeFloatingSettings();
       
@@ -1938,23 +1947,20 @@ async function triggerNotification(task) {
   const mergedTaskIds = mergedTasks.map(t => t.id);
   const displayTitle = getMergedDisplayTitle(mergedTaskIds);
   
-  notifySystem(displayTitle, getTaskDisplayDesc(task)).catch(console.error);
+  notifySystem(displayTitle, getTaskDisplayDesc(task), { showToast: false }).catch(console.error);
 
-  if (settings.lockScreenEnabled) {
-    renderFullUI();
-    await new Promise(resolve => setTimeout(resolve, 0));
-    await startLockScreen(task, mergedTasks);
-  } else {
-    activePopup = { ...task, mergedTaskIds: mergedTasks.map(t => t.id) };
-    renderFullUI();
-  }
+  renderFullUI();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await startLockScreen(task, mergedTasks);
 }
 
 async function startLockScreen(task, mergedTasks = []) {
   if (document.activeElement && typeof document.activeElement.blur === 'function') {
     document.activeElement.blur();
   }
-  const pauseMediaPromise = invoke('pause_playing_media_sessions').catch(console.error);
+  const pauseMediaPromise = settings.lockMediaMode === 'none'
+    ? Promise.resolve(false)
+    : invoke('pause_playing_media_sessions', { mode: settings.lockMediaMode }).catch(console.error);
   await Promise.race([
     pauseMediaPromise,
     new Promise(resolve => setTimeout(resolve, 800)),
@@ -1983,6 +1989,8 @@ async function startLockScreen(task, mergedTasks = []) {
     active: true,
     remaining: lockDuration,
     task: { ...task },
+    strictMode: !!settings.lockScreenEnabled,
+    allowStrictSnooze: true,
     mergedTaskIds: mergedIds,
     unlockProgress: 0,
     unlockTimer: null,
@@ -1999,8 +2007,9 @@ async function startLockScreen(task, mergedTasks = []) {
         desc: getMergedDisplayDesc(mergedIds),
         duration: parseInt(lockDuration),
         icon: task.icon,
-        strict_mode: !!settings.strictMode,
-        allow_strict_snooze: !!settings.allowStrictSnooze,
+        strict_mode: !!settings.lockScreenEnabled,
+        // Force-rest mode only removes emergency unlock; snooze behavior stays unchanged.
+        allow_strict_snooze: true,
         max_snooze_count: parseInt(settings.maxSnoozeCount),
         snooze_minutes: parseInt(task.snoozeMinutes || 5),
         current_snooze_count: parseInt(snoozedStatus[task.id]?.count || 0),
@@ -2641,6 +2650,12 @@ function renderFullUI() {
   const app = document.getElementById('app');
   const locales = getSupportedLocales();
   const currentLang = getLocale();
+  const lockStrictMode = lockScreenState.active
+    ? !!lockScreenState.strictMode
+    : !!settings.lockScreenEnabled;
+  const lockSnoozeRestricted = lockScreenState.active
+    ? lockStrictMode && !lockScreenState.allowStrictSnooze
+    : false;
 
   app.innerHTML = `
     <div class="header">
@@ -2749,12 +2764,16 @@ function renderFullUI() {
         </div>
         <div class="toggle ${settings.lockScreenEnabled ? 'active' : ''}" id="lockToggle"></div>
       </div>
-      <div class="setting-row">
+      <div class="setting-row" id="lockMediaModeRow">
         <div class="setting-info">
-          <label style="color:var(--danger, #ff4d4f);">${t('settings.strictMode')}</label>
-          <span class="setting-desc">${t('settings.strictModeDesc')}</span>
+          <label>${t('settings.lockMediaMode')}</label>
+          <span class="setting-desc">${t('settings.lockMediaModeDesc')}</span>
         </div>
-        <div class="toggle ${settings.strictMode ? 'active' : ''}" id="strictModeToggle"></div>
+        <select class="inline-select" id="lockMediaMode" style="width:132px;">
+          <option value="none" ${settings.lockMediaMode === 'none' ? 'selected' : ''}>${t('settings.lockMediaModeNone')}</option>
+          <option value="video" ${settings.lockMediaMode === 'video' ? 'selected' : ''}>${t('settings.lockMediaModeVideo')}</option>
+          <option value="all" ${settings.lockMediaMode === 'all' ? 'selected' : ''}>${t('settings.lockMediaModeAll')}</option>
+        </select>
       </div>
       <div class="setting-row">
         <div class="setting-info">
@@ -2798,14 +2817,6 @@ function renderFullUI() {
             <input type="number" class="idle-threshold-input" id="idleThresholdInput" value="${Math.floor(settings.idleThreshold / 60)}" min="1" max="60">
             <span class="input-unit">${t('time.minutes')}</span>
           </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-info">
-            <label>${t('settings.allowStrictSnooze')}</label>
-            <span class="setting-desc">${t('settings.allowStrictSnoozeDesc')}</span>
-          </div>
-          <div class="toggle ${settings.allowStrictSnooze ? 'active' : ''}" id="allowStrictSnoozeToggle"></div>
         </div>
 
         <div class="setting-row">
@@ -3033,7 +3044,7 @@ function renderFullUI() {
           <button class="btn btn-primary" id="dismissBtn">${t('buttons.gotIt')}</button>
           ${(() => {
             const count = (activePopup && snoozedStatus[activePopup.id]) ? snoozedStatus[activePopup.id].count : 0;
-            const isStrictRestricted = settings.strictMode && !settings.allowStrictSnooze;
+            const isStrictRestricted = lockSnoozeRestricted;
             if (count < settings.maxSnoozeCount && !isStrictRestricted) {
               return `<button class="btn btn-secondary" id="popupSnoozeBtn">${t('buttons.snooze', { minutes: activePopup ? (activePopup.snoozeMinutes || 5) : 5 })}</button>`;
             }
@@ -3070,7 +3081,7 @@ function renderFullUI() {
           ${t('buttons.confirmRest')}
         </button>
         ` : `
-        ${settings.strictMode || isLockSlaveWindow ? '' : `
+        ${lockStrictMode || isLockSlaveWindow ? '' : `
         <button class="unlock-btn" id="unlockBtn">
           <div class="unlock-progress"></div>
           <div class="unlock-text">
@@ -3084,7 +3095,7 @@ function renderFullUI() {
             return '';
           }
           const count = (lockScreenState.task && snoozedStatus[lockScreenState.task.id]) ? snoozedStatus[lockScreenState.task.id].count : 0;
-          const isStrictRestricted = settings.strictMode && !settings.allowStrictSnooze;
+          const isStrictRestricted = lockSnoozeRestricted;
 
           if (count >= settings.maxSnoozeCount) {
             return '<div style="color:rgba(255,255,255,0.5); font-size:0.8rem; margin-top:15px;">' + t('lockScreen.snoozeLimit') + '</div>';
@@ -3480,10 +3491,6 @@ function bindEvents() {
         settings.autoUnlock = !settings.autoUnlock;
         el.classList.toggle('active', settings.autoUnlock);
         saveSettings();
-      } else if (el.id === 'strictModeToggle') {
-        settings.strictMode = !settings.strictMode;
-        el.classList.toggle('active', settings.strictMode);
-        saveSettings();
       } else if (el.id === 'resetOnIdleToggle') {
         settings.resetOnIdle = !settings.resetOnIdle;
         el.classList.toggle('active', settings.resetOnIdle);
@@ -3494,11 +3501,6 @@ function bindEvents() {
         }
         saveSettings();
         syncTasksToBackend();
-      } else if (el.id === 'allowStrictSnoozeToggle') {
-        settings.allowStrictSnooze = !settings.allowStrictSnooze;
-        el.classList.toggle('active', settings.allowStrictSnooze);
-        saveSettings();
-        renderFullUI();
       } else if (el.id === 'enableMergeToggle') {
         settings.enableMerge = !settings.enableMerge;
         el.classList.toggle('active', settings.enableMerge);
@@ -3671,6 +3673,14 @@ function bindEvents() {
   document.getElementById('addTaskBtn').onclick = addTask;
   document.getElementById('pauseBtn').onclick = togglePause;
   document.getElementById('resetBtn').onclick = resetAll;
+  const lockMediaMode = document.getElementById('lockMediaMode');
+  if (lockMediaMode) {
+    lockMediaMode.addEventListener('change', event => {
+      const mode = event.target.value;
+      settings.lockMediaMode = ['none', 'video', 'all'].includes(mode) ? mode : 'none';
+      saveSettings();
+    });
+  }
   document.getElementById('dismissBtn').onclick = dismissNotification;
   
   const popupSnoozeBtn = document.getElementById('popupSnoozeBtn');
