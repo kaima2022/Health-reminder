@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.6-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.7-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -191,6 +191,10 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.8.7 (2026-08-27)
+- **Linux 锁屏稳定性修复**（[#26](https://github.com/kaima2022/Health-reminder/issues/26)）：锁屏看门狗对窗口和显示器的访问统一切换到 Tauri 主线程，避免 Linux GTK/GDK 在后台线程调用时出现内存损坏和崩溃。
+- **锁屏窗口恢复更稳健**：显示器重新扫描期间先释放锁屏状态锁，再按当前锁屏代次回写窗口列表，减少显示器变化时的竞争与卡死风险。
 
 ### v1.8.6 (2026-08-20)
 - **锁屏媒体暂停修复**（[#25](https://github.com/kaima2022/Health-reminder/issues/25)）：Windows 锁屏开始前会先暂停正在播放的浏览器媒体会话，并仅对确认正在出声的本地播放器窗口发送暂停命令，避免已暂停的播放器被误触发为播放状态。

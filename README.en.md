@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.6-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.8.7-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -190,6 +190,10 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.8.7 (2026-08-27)
+- **Linux lock-screen stability fix** ([#26](https://github.com/kaima2022/Health-reminder/issues/26)): Lock watchdog access to windows and monitors now runs on Tauri's main thread, preventing GTK/GDK memory corruption and crashes caused by background-thread calls.
+- **More robust lock-window recovery**: Monitor reconciliation releases the lock-screen state before scanning and writes back only for the current lock generation, reducing contention and deadlock risk when displays change.
 
 ### v1.8.6 (2026-08-20)
 - **Lock-screen media pause fix** ([#25](https://github.com/kaima2022/Health-reminder/issues/25)): On Windows, the app now pauses playing browser media sessions before the lock screen starts and only sends pause commands to local player windows that are confirmed to be producing audio, preventing already-paused players from being toggled back into playback.
