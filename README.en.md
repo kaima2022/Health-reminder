@@ -102,21 +102,37 @@ In today's fast-paced digital era, a healthy body is the cornerstone of high pro
 ## Why Do You Need It?
 
 ### 1. It Actually Makes You Rest
-- **Forced Lock Screen**: When it's time to rest, the screen locks automatically (supports multiple monitors), forcing you to put down your mouse and get moving.
-- **Strict Mode**: If you can't resist clicking "skip", try enabling strict mode - it hides the unlock button until rest time is over.
-- **Auto Unlock**: When rest time ends, the screen unlocks automatically without any extra clicks, seamlessly returning you to work.
+- **Full-screen rest reminders**: When a task is due, the rest screen covers the desktop even if the main window is minimized to the tray, pulling your attention away from work.
+- **Multi-monitor coverage**: Extended and mirrored displays show the rest screen together and remain on top so a second monitor cannot become an easy escape.
+- **Force Rest Mode**: Normal mode keeps the 3-second emergency unlock control. Force Rest Mode hides only that control while preserving reminder and snooze behavior.
+- **Flexible rest completion**: Confirm manually when the countdown finishes, or enable automatic unlock to return to work without another click.
+- **Lock-screen input guard**: Keyboard input, mouse wheel events, and unrelated clicks are intercepted during the rest countdown to reduce accidental background interaction.
+- **Personalized rest screen**: Configure the rest duration for each task and use a local image as the synchronized lock-screen background across displays.
+- **Reliable countdown freezing**: App lock screens, system locks, global pause, per-task pause, and idle periods freeze the relevant countdowns so they resume without drift.
 
 ### 2. Thoughtful Without Being Intrusive
-- **Advance Notice**: A popup appears before locking (default 5 seconds), giving you time to save your work without being suddenly interrupted.
-- **Temporary Snooze**: In a meeting or handling something urgent? Click "Snooze" to work a few more minutes. You can set a maximum snooze count to prevent endless procrastination.
-- **Smart Idle Detection**: If you step away from your computer to get water, it automatically resets the sitting timer, so you won't be reminded to rest right after sitting back down.
+- **Advance notice**: Configure a separate warning time for every task so you can save your work before the full-screen reminder appears.
+- **Controlled snooze**: Set the snooze duration per task and limit repeated snoozes globally, with an accurate countdown while a task is deferred.
+- **Nearby task merging**: Combine tasks that are close to triggering into one rest period using a configurable threshold, avoiding back-to-back interruptions.
+- **Smart idle detection**: After the computer is idle for a configurable period, selected tasks can reset and pause so they do not trigger immediately when you return.
+- **Media handling policy**: On Windows, leave media untouched, pause only sessions explicitly identified as video, or pause all active media. Music is uninterrupted by default.
+- **Layered notification fallback**: Native notifications, in-app messages, and sound work together; permission or delivery failures fall back visibly instead of silently losing a reminder.
+- **Custom reminder sounds**: Select, test, replace, or clear a local audio file, with the default sound retained as a fallback if playback fails.
+- **Silent auto-start**: Launch with the operating system and go directly to the tray without opening the main window at login.
 
 ### 3. Simple and Easy to Use
-- **Parallel Multi-tasking**: Sitting, drinking water, eye rest - enable whatever reminders you want, they don't conflict.
-- **One-click Settings**: All settings are right on the card, click the gear icon to change times, no need to dig through complex menus.
-- **Lightweight and Silent**: It quietly sits in the tray, using minimal resources, barely noticeable.
-- **Silent boot and floating window**: Start hidden in the tray on boot, or keep a compact always-on-top countdown visible.
-- **Daily reminders**: Custom tasks can trigger at multiple fixed `HH:mm` times, such as 11:00 exercise and 21:00 foot bath.
+- **Complete task system**: Use the built-in sitting, water, and eye-rest reminders or add any number of custom tasks that run independently.
+- **Interval and daily schedules**: Trigger tasks every few minutes or at multiple daily `HH:mm` times, such as 11:00 exercise and 21:00 foot bath.
+- **Fine-grained task controls**: Enable, pause, resume, and reset tasks individually while configuring interval, warning, snooze, rest duration, and idle-reset behavior.
+- **Quick bulk actions**: Pause, resume, or reset everything from the main window or tray, and reset a specific task directly from the tray submenu.
+- **Accurate background timing**: Timers run in the Rust backend rather than depending on UI refreshes, keeping reminders punctual while minimized or tray-resident.
+- **Two floating-window modes**: Keep the next health reminder visible or run a titled custom countdown toward a target date and time.
+- **Floating task controls**: Switch the displayed task from the task menu, then pause, resume, or reset it without affecting other reminders.
+- **Customizable floating window**: Adjust position, width, font size, opacity, background, and text color, with blue, green, teal, dark-blue, and transparent themes.
+- **Edge auto-hide**: Collapse the floating window at a screen edge and reveal it on hover, with dual-monitor seam handling to reduce accidental hiding and cross-screen jumps.
+- **Practical tray menu**: Show the main window, toggle the floating window, pause or resume, reset tasks, and quit, while the tray tooltip shows remaining times.
+- **Themes and languages**: Switch between light and dark themes and between Chinese and English, including synchronized tray and multi-monitor lock-screen text.
+- **Easy updates and cross-platform packages**: Use automatic checks, manual checks, or in-app updates, with installers for Windows, macOS, and Linux plus Scoop support on Windows.
 
 ---
 
