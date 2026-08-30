@@ -24,14 +24,14 @@
 
 ##  展示
 
-### v1.8.0 悬浮窗靠边隐藏与样式优化
+### 悬浮窗靠边隐藏与样式优化
 
 <p align="center">
   <img src="./docs/screenshots/floating-window-edge-autohide.png" alt="悬浮窗靠边自动隐藏" width="45%">
   <img src="./docs/screenshots/floating-window-compact-controls.png" alt="悬浮窗紧凑控制与样式" width="45%">
 </p>
 
-### v1.7.0 悬浮窗与定点提醒
+### 悬浮窗与定点提醒
 
 <p align="center">
   <img src="./docs/screenshots/floating-window-next.png" alt="悬浮窗下个提醒" width="45%">
