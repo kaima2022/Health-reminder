@@ -1532,9 +1532,15 @@ window.__HEALTH_REMINDER_HANDLE_TRIGGER__ = async (task) => {
 
 async function init() {
   applyTheme(settings.theme); // 在加载设置后立即应用主题
-  await loadAppVersion();
   const urlParams = new URLSearchParams(window.location.search);
   installLockInputGuard();
+  // Paint the main surface before any backend or permission call. The main
+  // window is hidden for silent startup, but this also prevents a briefly
+  // visible window from showing a blank WebView if startup work is slow.
+  if (!urlParams.get('mode')) {
+    renderFullUI();
+  }
+  await loadAppVersion();
   if (urlParams.get('mode') === 'floating') {
     document.body.classList.add('floating-mode');
     setLocale(settings.language || detectLocale());
@@ -1666,7 +1672,12 @@ async function init() {
     console.error('Failed to check autostart status', e);
   }
 
-  await ensureNotificationPermission();
+  // Do not open a native notification permission flow while the app is
+  // hidden during Windows login. The permission is checked lazily by the
+  // first notification instead, so silent startup cannot stall the WebView.
+  if (!(startedSilent && settings.silentAutoStart)) {
+    ensureNotificationPermission().catch(console.error);
+  }
 
   // 初始化 countdowns 对象用于 UI 显示
   settings.tasks.forEach(task => {
@@ -1866,7 +1877,13 @@ async function loadSettings() {
     const saved = await invoke('load_settings');
     if (saved) {
       const parsed = JSON.parse(saved.replace(/^\uFEFF/, ''));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Invalid settings data');
+      }
       settings = { ...settings, ...parsed };
+      if (!Array.isArray(settings.tasks)) {
+        settings.tasks = [...DEFAULT_TASKS];
+      }
       if (parsed.strictMode && !parsed.lockScreenEnabled) {
         settings.lockScreenEnabled = true;
       }
@@ -1892,14 +1909,19 @@ async function loadSettings() {
     }
   } catch (e) {
     console.log('Using default settings');
+    settings.tasks = [...DEFAULT_TASKS];
   }
   normalizeFloatingSettings();
   
   const savedStats = localStorage.getItem('reminder_stats');
   if (savedStats) {
-    const parsed = JSON.parse(savedStats);
-    if (parsed.date === new Date().toDateString()) {
-      stats = parsed.stats;
+    try {
+      const parsed = JSON.parse(savedStats);
+      if (parsed.date === new Date().toDateString() && parsed.stats && typeof parsed.stats === 'object') {
+        stats = { ...stats, ...parsed.stats };
+      }
+    } catch (e) {
+      console.warn('Ignoring invalid saved statistics', e);
     }
   }
 }
@@ -3947,4 +3969,25 @@ function bindEvents() {
 window.triggerNotification = triggerNotification;
 window.settings = settings;
 
-init();
+init().catch(error => {
+  // Keep a startup failure from leaving the visible WebView as a blank page.
+  // This is especially important for Windows silent auto-start, where the
+  // tray can reveal the window while a backend call is still recovering.
+  console.error('Application startup failed', error);
+  try {
+    const mode = new URLSearchParams(window.location.search).get('mode');
+    if (mode === 'floating') {
+      renderFloatingUI();
+    } else {
+      renderFullUI();
+    }
+  } catch (renderError) {
+    console.error('Failed to render startup fallback', renderError);
+  }
+
+  if (startedSilent && settings.silentAutoStart) {
+    invoke('hide_main_window').catch(() => {});
+  } else {
+    invoke('show_main_window').catch(() => {});
+  }
+});

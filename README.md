@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.9.0-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.9.1-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -207,6 +207,11 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.9.1 (2026-10-07)
+- **锁屏重置计时修复**（[#28](https://github.com/kaima2022/Health-reminder/issues/28)）：锁屏期间手动重置任务后，退出锁屏不会再错误补偿休息时长，避免下一轮倒计时被延长。
+- **静默自启动修复**（[#29](https://github.com/kaima2022/Health-reminder/issues/29)）：静默自启动时延后通知权限请求，并提前渲染主界面，避免登录后隐藏窗口阶段触发系统权限流程导致白屏。
+- **托盘重启入口**：新增“重启软件”菜单项，便于从托盘快速恢复应用状态。
 
 ### v1.9.0 (2026-08-28)
 - **锁屏提醒行为修复**（[#27](https://github.com/kaima2022/Health-reminder/issues/27)）：无论是否开启强制休息模式，提醒到点后都会显示完整锁屏界面；强制休息模式现在只负责隐藏长按紧急解锁按钮，不再改变提醒方式。

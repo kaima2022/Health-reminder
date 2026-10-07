@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.9.0-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.9.1-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -206,6 +206,11 @@ npm run tauri build
 
 > #### Scoop update command
 > scoop update health-reminder
+
+### v1.9.1 (2026-10-07)
+- **Lock-screen reset timing fix** ([#28](https://github.com/kaima2022/Health-reminder/issues/28)): Resetting a task during the lock screen no longer causes the next countdown to add the break duration after unlock.
+- **Silent auto-start fix** ([#29](https://github.com/kaima2022/Health-reminder/issues/29)): Notification permission requests are deferred during silent startup and the main UI renders immediately, avoiding a blank window when Windows opens the permission flow while the app is hidden.
+- **Tray restart action**: Added a Restart application item so the app can be quickly recovered from the tray.
 
 ### v1.9.0 (2026-08-28)
 - **Lock-screen reminder behavior** ([#27](https://github.com/kaima2022/Health-reminder/issues/27)): Due reminders now always open the full lock screen whether Force Rest Mode is enabled or not. Force Rest Mode now only hides the hold-to-unlock control and no longer changes the reminder surface.

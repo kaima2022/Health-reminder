@@ -201,6 +201,8 @@ fn get_tray_text(key: &str, lang: &str) -> &'static str {
         ("reset_prefix", _) => "重置: ",
         ("floating", "en-US") => "Toggle Floating Window",
         ("floating", _) => "显示/隐藏悬浮窗",
+        ("restart", "en-US") => "Restart",
+        ("restart", _) => "重启软件",
         // 默认任务标题翻译
         ("task_sit", "en-US") => "Stand Up Reminder",
         ("task_sit", _) => "久坐提醒",
@@ -259,6 +261,7 @@ struct TaskTimer {
     daily_last_trigger_key: Option<String>,
     frozen_remaining: Option<u64>,
     frozen_total: Option<u64>,
+    reset_during_lock: bool,
 }
 
 struct TimerState {
@@ -475,6 +478,7 @@ mod tests {
             daily_last_trigger_key: None,
             frozen_remaining: None,
             frozen_total: None,
+            reset_during_lock: false,
         }
     }
 
@@ -505,6 +509,30 @@ mod tests {
 
         assert_eq!(timer.frozen_remaining, Some(45 * 60));
         assert_eq!(timer.frozen_total, Some(45 * 60));
+    }
+
+    #[test]
+    fn lock_exit_does_not_compensate_a_task_reset_during_lock() {
+        let lock_start = Instant::now();
+        let mut state = TimerState::new();
+        state.tasks.insert(
+            "before-lock".to_string(),
+            interval_timer(20, lock_start - Duration::from_secs(5)),
+        );
+        let mut during_lock = interval_timer(20, lock_start + Duration::from_secs(1));
+        during_lock.reset_during_lock = true;
+        state.tasks.insert("during-lock".to_string(), during_lock);
+
+        compensate_lock_screen_timers(&mut state, Duration::from_secs(60), false);
+
+        assert_eq!(
+            state.tasks["before-lock"].reset_time,
+            lock_start - Duration::from_secs(5) + Duration::from_secs(60)
+        );
+        assert_eq!(
+            state.tasks["during-lock"].reset_time,
+            lock_start + Duration::from_secs(1)
+        );
     }
 
     #[test]
@@ -692,6 +720,14 @@ fn rebuild_tray_menu(app: &AppHandle) {
         None::<&str>,
     )
     .unwrap();
+    let restart = MenuItem::with_id(
+        app,
+        "restart",
+        get_tray_text("restart", &lang),
+        true,
+        None::<&str>,
+    )
+    .unwrap();
     let show = MenuItem::with_id(
         app,
         "show",
@@ -747,7 +783,15 @@ fn rebuild_tray_menu(app: &AppHandle) {
 
     let menu = Menu::with_items(
         app,
-        &[&show, &floating, &pause, &reset_all, &reset_submenu, &quit],
+        &[
+            &show,
+            &floating,
+            &pause,
+            &reset_all,
+            &reset_submenu,
+            &restart,
+            &quit,
+        ],
     )
     .unwrap();
 
@@ -796,6 +840,7 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
                         daily_last_trigger_key: None,
                         frozen_remaining: None,
                         frozen_total: None,
+                        reset_during_lock: false,
                     };
                     if should_freeze_new_state {
                         freeze_timer_countdown(&mut new_timer, now);
@@ -819,6 +864,7 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
                         daily_last_trigger_key: existing.daily_last_trigger_key.clone(),
                         frozen_remaining: None,
                         frozen_total: None,
+                        reset_during_lock: existing.reset_during_lock,
                     };
                     if should_freeze_new_state {
                         freeze_timer_countdown(&mut new_timer, now);
@@ -837,6 +883,7 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
                         daily_last_trigger_key: existing.daily_last_trigger_key.clone(),
                         frozen_remaining: existing.frozen_remaining,
                         frozen_total: existing.frozen_total,
+                        reset_during_lock: existing.reset_during_lock,
                     };
                     freeze_timer_countdown(&mut new_timer, now);
                     new_tasks.insert(task_id, new_timer);
@@ -854,6 +901,7 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
                             daily_last_trigger_key: existing.daily_last_trigger_key.clone(),
                             frozen_remaining: existing.frozen_remaining,
                             frozen_total: existing.frozen_total,
+                            reset_during_lock: existing.reset_during_lock,
                         },
                     );
                 }
@@ -870,6 +918,7 @@ fn sync_tasks(app: tauri::AppHandle, tasks: Vec<TaskConfig>) {
                     daily_last_trigger_key: None,
                     frozen_remaining: None,
                     frozen_total: None,
+                    reset_during_lock: false,
                 };
                 if should_freeze_new_state {
                     freeze_timer_countdown(&mut new_timer, now);
@@ -972,10 +1021,12 @@ fn timer_resume_task(task_id: String) {
 fn timer_reset_task(task_id: String) {
     let mut state = get_timer_state().lock().unwrap();
     let now = Instant::now();
+    let reset_during_lock = state.lock_screen_active;
     let should_freeze =
         state.paused || state.system_locked || state.lock_screen_active || state.is_idle;
     if let Some(timer) = state.tasks.get_mut(&task_id) {
         timer.reset_time = now;
+        timer.reset_during_lock = reset_during_lock;
         timer.triggered = false;
         timer.snoozed = false;
         timer.snooze_count = 0;
@@ -996,10 +1047,12 @@ fn timer_reset_task(task_id: String) {
 fn timer_reset_all() {
     let mut state = get_timer_state().lock().unwrap();
     let now = Instant::now();
+    let reset_during_lock = state.lock_screen_active;
     let should_freeze =
         state.paused || state.system_locked || state.lock_screen_active || state.is_idle;
     for timer in state.tasks.values_mut() {
         timer.reset_time = now;
+        timer.reset_during_lock = reset_during_lock;
         timer.triggered = false;
         timer.snoozed = false;
         timer.snooze_count = 0;
@@ -1025,6 +1078,7 @@ fn timer_snooze_task(task_id: String, minutes: u64) {
     if let Some(timer) = state.tasks.get_mut(&task_id) {
         let snooze_duration = Duration::from_secs(minutes * 60);
         timer.reset_time = now + snooze_duration;
+        timer.reset_during_lock = false;
 
         timer.triggered = false;
         timer.snoozed = true;
@@ -1164,6 +1218,36 @@ fn timer_set_system_locked(locked: bool) {
     }
 }
 
+fn compensate_lock_screen_timers(
+    state: &mut TimerState,
+    lock_duration: Duration,
+    keep_frozen: bool,
+) {
+    for timer in state.tasks.values_mut() {
+        if timer.snoozed {
+            continue;
+        }
+        // A task reset while the lock screen is active already has a reset
+        // time relative to the end of the rest. Compensating it here would
+        // add the rest duration to its next interval a second time.
+        if !timer.reset_during_lock {
+            timer.reset_time += lock_duration;
+            if let Some(ref mut disabled_at) = timer.disabled_at {
+                *disabled_at += lock_duration;
+            }
+        } else if let Some(ref mut disabled_at) = timer.disabled_at {
+            // A disabled task reset during the lock keeps the reset point.
+            *disabled_at = timer.reset_time;
+        }
+        timer.reset_during_lock = false;
+        if timer.disabled_at.is_none() && keep_frozen {
+            freeze_timer_countdown(timer, Instant::now());
+        } else if timer.disabled_at.is_none() {
+            clear_timer_freeze(timer);
+        }
+    }
+}
+
 #[tauri::command]
 fn timer_set_lock_screen_active(active: bool) {
     let mut state = get_timer_state().lock().unwrap();
@@ -1178,20 +1262,7 @@ fn timer_set_lock_screen_active(active: bool) {
         let keep_frozen = state.paused || state.system_locked || state.is_idle;
         if let Some(lock_start) = state.lock_screen_start {
             let lock_duration = lock_start.elapsed();
-            for timer in state.tasks.values_mut() {
-                if timer.snoozed {
-                    continue;
-                }
-                timer.reset_time += lock_duration;
-                // 如果任务被禁用，也需要同步更新 disabled_at，保持相对时间不变
-                if let Some(ref mut disabled_at) = timer.disabled_at {
-                    *disabled_at += lock_duration;
-                } else if keep_frozen {
-                    freeze_timer_countdown(timer, Instant::now());
-                } else {
-                    clear_timer_freeze(timer);
-                }
-            }
+            compensate_lock_screen_timers(&mut state, lock_duration, keep_frozen);
         }
         state.lock_screen_active = false;
         state.lock_screen_start = None;
@@ -2723,7 +2794,8 @@ pub fn run() {
                 MenuItem::with_id(app, "floating", "显示/隐藏悬浮窗", true, None::<&str>)?;
             let reset = MenuItem::with_id(app, "reset", "重置所有任务", true, None::<&str>)?;
             let pause = MenuItem::with_id(app, "pause", "暂停", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &floating, &pause, &reset, &quit])?;
+            let restart = MenuItem::with_id(app, "restart", "重启软件", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &floating, &pause, &reset, &restart, &quit])?;
 
             let tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -2733,6 +2805,8 @@ pub fn run() {
                     let id_str = event.id.as_ref();
                     if id_str == "quit" {
                         app.exit(0);
+                    } else if id_str == "restart" {
+                        app.restart();
                     } else if id_str == "show" {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.unminimize();
@@ -2755,8 +2829,10 @@ pub fn run() {
                         let task_id = id_str.trim_start_matches("reset_task_");
                         let mut state = get_timer_state().lock().unwrap();
                         let now = Instant::now();
+                        let reset_during_lock = state.lock_screen_active;
                         if let Some(timer) = state.tasks.get_mut(task_id) {
                             timer.reset_time = now;
+                            timer.reset_during_lock = reset_during_lock;
                             timer.triggered = false;
                             timer.snoozed = false;
                             timer.snooze_count = 0;
