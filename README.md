@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.9.1-orange?style=flat-square" alt="Version"></a>
+  <a href="https://github.com/kaima2022/Health-reminder/releases"><img src="https://img.shields.io/badge/Version-1.9.2-orange?style=flat-square" alt="Version"></a>
 </p>
 
 <p align="center">
@@ -207,6 +207,9 @@ npm run tauri build
 
 > #### scoop 更新命令
 > scoop update health-reminder
+
+### v1.9.2 (2026-10-17)
+- **更新代理**（[#30](https://github.com/kaima2022/Health-reminder/issues/30)）：新增可持久化的自定义代理设置，支持 HTTP、HTTPS 和 SOCKS5，用于检查更新与下载安装，并提供代理连通性测试。
 
 ### v1.9.1 (2026-10-07)
 - **锁屏重置计时修复**（[#28](https://github.com/kaima2022/Health-reminder/issues/28)）：锁屏期间手动重置任务后，退出锁屏不会再错误补偿休息时长，避免下一轮倒计时被延长。

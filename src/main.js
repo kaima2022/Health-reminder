@@ -65,6 +65,8 @@ let settings = {
   floatingSelectedTaskId: '',
   floatingCountdownTitle: '秒杀倒计时',
   floatingCountdownTarget: '',
+  updateProxyEnabled: false,
+  updateProxyUrl: '',
 };
 
 let countdowns = {};  // 现在由后端事件更新
@@ -1812,7 +1814,7 @@ async function checkForUpdates(manual = false) {
   }
 
   try {
-    const update = await check();
+    const update = await check(getUpdaterOptions());
     if (update) {
       updateInfo = {
         version: update.version,
@@ -1846,6 +1848,47 @@ async function checkForUpdates(manual = false) {
       isCheckingUpdate = false;
       renderFullUI();
     }
+  }
+}
+
+function getUpdaterOptions() {
+  if (!settings.updateProxyEnabled) return {};
+  const proxy = String(settings.updateProxyUrl || '').trim();
+  if (!proxy) return {};
+  let parsed;
+  try {
+    parsed = new URL(proxy);
+  } catch (_) {
+    throw new Error(t('update.invalidProxy'));
+  }
+  if (!['http:', 'https:', 'socks5:'].includes(parsed.protocol)) {
+    throw new Error(t('update.invalidProxy'));
+  }
+  return { proxy };
+}
+
+async function testUpdateProxy() {
+  const button = document.getElementById('testUpdateProxyBtn');
+  if (button) button.disabled = true;
+  updateMessage = null;
+  renderFullUI();
+  try {
+    const update = await check(getUpdaterOptions());
+    if (update) {
+      updateInfo = { version: update.version, body: update.body, update };
+      updateMessage = { type: 'success', text: t('update.proxyConnectedWithUpdate') };
+    } else {
+      updateMessage = { type: 'success', text: t('update.proxyConnected') };
+    }
+  } catch (e) {
+    const errorMsg = normalizeErrorMessage(e, t('update.networkError'));
+    updateMessage = { type: 'error', text: t('update.proxyFailed', { error: errorMsg }) };
+  } finally {
+    renderFullUI();
+    setTimeout(() => {
+      updateMessage = null;
+      renderFullUI();
+    }, 4000);
   }
 }
 
@@ -3036,6 +3079,25 @@ function renderFullUI() {
           </button>
         </div>
 
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>${t('settings.updateProxy')}</label>
+            <span class="setting-desc">${t('settings.updateProxyDesc')}</span>
+          </div>
+          <div class="toggle ${settings.updateProxyEnabled ? 'active' : ''}" id="updateProxyToggle"></div>
+        </div>
+
+        <div class="setting-row" style="${settings.updateProxyEnabled ? '' : 'display:none;'}" id="updateProxyRow">
+          <div class="setting-info">
+            <label>${t('settings.updateProxyUrl')}</label>
+            <span class="setting-desc">${t('settings.updateProxyUrlDesc')}</span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
+            <input type="url" id="updateProxyUrlInput" value="${escapeHtml(settings.updateProxyUrl || '')}" placeholder="http://127.0.0.1:7890" style="min-width:220px;">
+            <button class="preset-btn" id="testUpdateProxyBtn" style="padding:6px 12px;">${t('buttons.testProxy')}</button>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -3533,6 +3595,11 @@ function bindEvents() {
         el.classList.toggle('active', settings.theme === 'dark');
         applyTheme(settings.theme);
         saveSettings();
+      } else if (el.id === 'updateProxyToggle') {
+        settings.updateProxyEnabled = !settings.updateProxyEnabled;
+        el.classList.toggle('active', settings.updateProxyEnabled);
+        saveSettings();
+        renderFullUI();
       }
     });
   });
@@ -3807,6 +3874,19 @@ function bindEvents() {
         checkForUpdates(true);
       }
     });
+  }
+
+  const updateProxyUrlInput = document.getElementById('updateProxyUrlInput');
+  if (updateProxyUrlInput) {
+    updateProxyUrlInput.addEventListener('change', (e) => {
+      settings.updateProxyUrl = e.target.value.trim();
+      saveSettings();
+    });
+  }
+
+  const testUpdateProxyBtn = document.getElementById('testUpdateProxyBtn');
+  if (testUpdateProxyBtn) {
+    testUpdateProxyBtn.addEventListener('click', testUpdateProxy);
   }
 
   const idleThresholdInput = document.getElementById('idleThresholdInput');

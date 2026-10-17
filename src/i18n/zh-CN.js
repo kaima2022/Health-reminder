@@ -64,6 +64,7 @@ export default {
     selectSound: '选择音频',
     changeSound: '更换音频',
     clearSound: '使用默认',
+    testProxy: '测试代理',
   },
 
   // 锁屏
@@ -142,6 +143,10 @@ export default {
     customBgImageDesc: '选择一张图片作为锁屏背景',
     theme: '主题',
     themeDesc: '切换亮色/暗色模式',
+    updateProxy: '更新代理',
+    updateProxyDesc: '检查更新和下载安装时使用自定义代理，关闭后直连',
+    updateProxyUrl: '代理地址',
+    updateProxyUrlDesc: '支持 http://、https:// 和 socks5://，留空即直连',
   },
 
   // 任务卡片
@@ -214,6 +219,10 @@ export default {
     checkFailed: '检查更新失败：{error}',
     installFailed: '更新安装失败：{error}',
     networkError: '网络错误，请稍后重试',
+    invalidProxy: '代理地址无效，请检查协议和地址',
+    proxyConnected: '代理连接成功，当前已是最新版本',
+    proxyConnectedWithUpdate: '代理连接成功，发现新版本',
+    proxyFailed: '代理连接失败：{error}',
   },
 
   // 托盘菜单

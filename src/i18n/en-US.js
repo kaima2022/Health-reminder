@@ -64,6 +64,7 @@ export default {
     selectSound: 'Select Audio',
     changeSound: 'Change Audio',
     clearSound: 'Use Default',
+    testProxy: 'Test Proxy',
   },
 
   // Lock screen
@@ -142,6 +143,10 @@ export default {
     customBgImageDesc: 'Select an image for the lock screen background',
     theme: 'Theme',
     themeDesc: 'Switch light/dark mode',
+    updateProxy: 'Update Proxy',
+    updateProxyDesc: 'Use a custom proxy for update checks and downloads; direct connection when disabled',
+    updateProxyUrl: 'Proxy Address',
+    updateProxyUrlDesc: 'Supports http://, https://, and socks5://; leave empty for direct connection',
   },
 
   // Task card
@@ -214,6 +219,10 @@ export default {
     checkFailed: 'Update check failed: {error}',
     installFailed: 'Update install failed: {error}',
     networkError: 'Network error, please try again later',
+    invalidProxy: 'Invalid proxy address; check the scheme and address',
+    proxyConnected: 'Proxy connected successfully; already up to date',
+    proxyConnectedWithUpdate: 'Proxy connected successfully; a new version is available',
+    proxyFailed: 'Proxy connection failed: {error}',
   },
 
   // Tray menu
